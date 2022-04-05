@@ -1,3 +1,6 @@
+from __future__ import annotations
+from email.policy import default
+
 import simpy
 import random
 import copy
@@ -6,33 +9,9 @@ from simpy.resources import base
 from heapq import heappush, heappop
 import random
 import functools
-import simpy
-import matplotlib.pyplot as plt
 import pandas as pd
-from dataclasses import dataclass
-from typing import Dict
-
-
-@dataclass(frozen=False, eq=True)
-class Entity():
-    name : str
-    id : int
-    def get_attribute(self,
-                    name: str,
-                ):
-        pass
-
-
-class Flow():
-    """ A singletone class for keeping the entities and accessing 
-        their attributes
-    """
-    id : int
-    entities : Dict[str,Entity]
-    def __init__(self, id):
-        self.id = id
-        self.entities = {}
-
+from dataclasses import dataclass,make_dataclass,field
+from typing import Dict,FrozenSet,Any
 
 
 @dataclass(frozen=False, eq=True)
@@ -45,31 +24,102 @@ class Task():
         ----------
         id : int
             an identifier for the task
-        flow_id : int
-            small integer that can be used to identify a flow
+        flow_name : str
+            string that can be used to identify a flow
         start_time : float
             when the task leaves the start-node
         end_time : float
             when the task reaches the end-node
-        queue_length : int
-            the queue length when the task is generated
         queue_time : float
             waiting time of the task in the queue
         service_time : float
             service time of the task
+        queue_length : int
+            the queue's system length when the task is generated
+        queue_time_in_service : float
+            time_in_service of the queue when the task is generated
     """
-
     id: int
-    flow_id: int
-    start_time: float
-    end_time: float = None
-    queue_length: int = None
-    queue_time: float = None
-    service_time: float = None
+    flow_name: str
 
-    #def __repr__(self):
-    #    return "Task id: {}, start_time: {}, end_time: {}".\
-    #        format(self.id, self.start_time, self.end_time)
+
+def get_all_values(d):
+    if isinstance(d, dict):
+        for v in d.values():
+            yield from get_all_values(v)
+    elif isinstance(d, list):
+        for v in d:
+            yield from get_all_values(v)
+    else:
+        yield d 
+
+
+class Flow():
+    """ A singletone class for keeping the entities and accessing 
+        their attributes
+    """
+    name : str
+    entities : Dict[str,Entity]
+    def __init__(self, name):
+        self.name = name
+        self.entities = {}
+
+
+class Entity():
+    name : str
+    env : simpy.Environment
+    flow : Flow
+    attributes : Dict[str,Any]
+    events : FrozenSet[str]
+    def __init__(self,
+                name : str,
+                env : simpy.Environment,
+                flow : Flow,
+                attributes : Dict[str,Any],
+                events : FrozenSet[str],
+                records_config: Dict,
+    ):
+        self.name = name
+        self.env = env
+        self.flow = flow
+        self.attributes = attributes
+        self.events = events
+        self.records_config = records_config
+
+        # assign the run function
+        self.action = env.process(self.run())  # starts the run() method as a SimPy process
+
+        # assign the flow
+        self.flow.entities[self.name] = self
+
+    def get_attribute(self,
+                    name: str,
+                ) -> Any:
+        return self.attributes[name]
+    def get_all_attributes(self) -> Dict[str,Any]:
+        return self.attributes
+    def get_events_names(self) -> FrozenSet[str]:
+        return self.events
+    def run(self) -> None:
+        pass
+    def add_records(self,
+                    task: Task,
+                    event_name: str,
+                ) -> Task:
+
+        # task_generation event add the timestamp
+        ts_dict = self.records_config.get('timestamps',{}).get(self.name,{})
+        if event_name in records_config.get('timestamps',{}).get(self.name,{}):
+            task.__setattr__(ts_dict[event_name],self.env.now)
+
+        # task_generation event attributes record
+        att_dict = self.records_config.get('attributes',{}).get(self.name,{}).get(event_name,{})
+        for entity_name in att_dict:
+            for attribute in att_dict[entity_name]:
+                value = self.flow.entities[entity_name].get_attribute(attribute)
+                task.__setattr__(att_dict[entity_name][attribute],value)
+
+        return task
 
 
 class StartNode(Entity):
@@ -89,27 +139,39 @@ class StartNode(Entity):
     """
     def __init__(self,
                 name : str,
-                id : int,
-                env,
+                env : simpy.Environment,
                 flow : Flow,
+                records_config: Dict,
                 arrival_dist,
-                initial_delay=0, 
-                finish_time=float("inf"), 
+                initial_delay : float=0, 
+                finish_time : float = float("inf"), 
             ):
         
-        self.name = name
-        self.id = id
-        self.env = env
+        # initialization
         self.arrival_dist = arrival_dist
         self.initial_delay = initial_delay
         self.finish = finish_time
         self.out = None
-        self.tasks_generated = 0
-        self.action = env.process(self.run())  # starts the run() method as a SimPy process
+        
+        # initialize the attributes
+        attributes = {
+            'tasks_generated':0,
+        }
 
-        # assign the flow
-        self.flow = flow
-        self.flow.entities[self.name] = self
+        # advertize the events
+        events = { 'task_generation' }
+
+        # initialize the entity
+        super().__init__(name,env,flow,attributes,events,records_config)
+
+    def generate_task(self):
+        new_task = Task(
+            id=self.attributes['tasks_generated'], 
+            flow_name=self.flow.name
+        )
+        fields = [ (name, float, field(default=-1)) for name in get_all_values(self.records_config) ]
+        new_task.__class__ = make_dataclass('GeneratedTask', fields=fields, bases=(Task,))
+        return new_task
 
     def run(self):
         """The generator function used in simulations.
@@ -118,22 +180,16 @@ class StartNode(Entity):
         while self.env.now < self.finish:
             # wait for next transmission
             yield self.env.timeout(self.arrival_dist())
-            new_task = Task( 
-                        start_time=self.env.now, 
-                        id=self.tasks_generated, 
-                        flow_id=self.flow.id,
-                        queue_length=self.flow.entities['queue'].get_attribute('queue_length'),
-            )
-            self.tasks_generated += 1
-            self.out.put(new_task)
+            new_task = self.generate_task()
+            self.attributes['tasks_generated'] += 1
+            
+            # add event records
+            new_task = self.add_records(task=new_task, event_name='task_generation')
 
-    def get_attribute(self,
-                    name: str,
-                ):
-        if name == "tasks_generated":
-            return self.tasks_generated
-        else:
-            return None
+            if self.out is not None:
+                self.out.put(new_task)
+
+
 
 class EndNode(Entity):
     """ The end-node that receives tasks and collects delay information.
@@ -146,43 +202,40 @@ class EndNode(Entity):
     """
     def __init__(self,
                 name : str,
-                id : int, 
-                env, 
+                env : simpy.Environment, 
                 flow : Flow,
+                records_config: Dict,
                 debug=False,
             ):
-        self.name = name
-        self.id = id
-        self.store = simpy.Store(env)
-        self.env = env
-        self.debug = debug
-        self.action = env.process(self.run())  # starts the run() method as a SimPy process
-        self.tasks_received = 0
 
-        # assign the flow
-        self.flow = flow
-        self.flow.entities[self.name] = self
+        self.store = simpy.Store(env)
+        self.debug = debug
+
+        # initialize the attributes
+        attributes = {
+            'tasks_received':0,
+        }
+
+        # advertize the events
+        events = { 'task_reception' }
+
+        # initialize the entity
+        super().__init__(name,env,flow,attributes,events,records_config)
 
     def run(self):
         while True:
             task = (yield self.store.get())
-            task.end_time = self.env.now
 
-            self.tasks_received += 1
+            # add event records
+            task = self.add_records(task=task, event_name='task_reception')
+
+            self.attributes['tasks_received'] += 1
             if self.debug:
                 print(task)
 
     def put(self, task):
         self.store.put(task)
 
-
-    def get_attribute(self,
-                    name: str,
-                ):
-        if name == "tasks_received":
-            return self.tasks_received
-        else:
-            return None
 
 class Queue(Entity):
     """ Models a queue with a service delay process and buffer size limit in number of tasks.
@@ -198,40 +251,52 @@ class Queue(Entity):
     """
     def __init__(self,
                 name : str,
-                id : int,
-                env, 
+                env : simpy.Environment, 
                 flow : Flow,
-                service_dist, 
+                service_dist,
+                records_config: Dict,
                 queue_limit: int=None, 
                 debug: bool=False,
             ):
-        self.name = name
-        self.id = id
+
         self.store = simpy.Store(env)
         self.service_dist = service_dist
-        self.env = env
         self.out = None
-        self.tasks_received = 0
-        self.tasks_dropped = 0
         self.queue_limit = queue_limit
-        self.queue_length = 0  # Current size of the queue in bytes
         self.debug = debug
-        self.is_busy = False  # Used to track if a task is currently being served
-        self.action = env.process(self.run())  # starts the run() method as a SimPy process
 
-        # assign the flow
-        self.flow = flow
-        self.flow.entities[self.name] = self
+        # initialize the attributes
+        attributes = {
+            'tasks_received':0,
+            'tasks_dropped':0,
+            'queue_length':0,
+            'last_service_duration':0,
+            'last_service_time':0,
+            'is_busy':False,
+        }
+
+        # advertize the events
+        events = { 'task_reception', 'task_service' }
+
+        # initialize the entity
+        super().__init__(name,env,flow,attributes,events,records_config)
 
     def run(self):
         while True:
             task = (yield self.store.get())
-            task.service_time = self.env.now
-            self.busy = True
-            self.queue_length -= 1
-            yield self.env.timeout(self.service_dist())
+
+            # add event records
+            task = self.add_records(task=task, event_name='task_service')
+
+            self.attributes['is_busy'] = True
+            self.attributes['queue_length'] -= 1
+            new_service_duration = self.service_dist()
+            self.attributes['last_service_duration'] = new_service_duration
+            self.attributes['last_service_time'] = self.env.now
+            yield self.env.timeout(new_service_duration)
+
             self.out.put(task)
-            self.busy = False
+            self.attributes['is_busy'] = False
             if self.debug:
                 print(task)
 
@@ -239,68 +304,87 @@ class Queue(Entity):
             task: Task
         ):
 
-        self.tasks_received += 1
-        tmp = self.queue_length + 1
+        self.attributes['tasks_received'] += 1
+        tmp = self.attributes['queue_length'] + 1
 
         drop = False
 
         if self.queue_limit is not None:       
             if tmp >= self.queue_limit:
-                self.tasks_dropped += 1
+                self.attributes['tasks_dropped'] += 1
                 drop = True
 
         if not drop:
-            task.queue_time = self.env.now
-            self.queue_length = tmp
+            # add event records
+            task = self.add_records(task=task, event_name='task_reception')
+
+            self.attributes['queue_length'] = tmp
             return self.store.put(task)
 
-    def get_attribute(self,
-                    name: str,
-                ):
-        if name == "queue_length":
-            return self.queue_length
-        elif name == "tasks_received":
-            return self.tasks_received
-        elif name == "tasks_dropped":
-            return self.tasks_dropped
-        else:
-            return None
 
 if __name__ == "__main__":
 
     #arrival = functools.partial(random.expovariate, 0.8)
-    arrival = functools.partial(random.uniform, 1.05, 1.05)
+    arrival = functools.partial(random.uniform, 1.1, 1.1)
     service = functools.partial(random.expovariate, 1)
 
     env = simpy.Environment()  # Create the SimPy environment
-    flow = Flow(id=0)
+    flow = Flow(name='0')
+
+    records_config = {
+        'timestamps' : {
+            'start-node' : {
+                'task_generation':'start_time',
+            },
+            'queue' : {
+                'task_reception':'queue_time',
+                'task_service':'service_time',
+            },
+            'end-node' : {
+                'task_reception':'end_time',
+            }
+        },
+        'attributes' : {
+            'start-node' : {
+                'task_generation' : {
+                    'queue' : {
+                        'queue_length':'queue_length',
+                        'last_service_duration':'last_service_duration',
+                        'last_service_time':'last_service_time',
+                        'is_busy':'is_busy',
+                    },
+                },
+            },
+        },
+    }
 
     # Create the start-node and end-node
     startnode = StartNode(
-                        id=0,
                         name='start-node',
                         env=env, 
                         flow=flow,
-                        arrival_dist=arrival)
+                        arrival_dist=arrival,
+                        records_config=records_config)
 
     queue = Queue(
-                id=1,
                 name='queue',
                 env=env,
                 flow=flow,
                 service_dist=service,
-                queue_limit=1000)
+                queue_limit=1000,
+                records_config=records_config)
 
     endnode = EndNode(
-                    id=2,
                     name='end-node',
                     env=env,
                     flow=flow,
-                    debug=True)
+                    debug=True,
+                    records_config=records_config)
 
     # Wire start-node, queue, and end-node together
     startnode.out = queue
     queue.out = endnode
+
 
     # Run it
     env.run(until=8000)

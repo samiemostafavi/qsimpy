@@ -1,6 +1,5 @@
 simpy
-pyparsing==2.4.7
+pyparsing
 numpy
-matplotlib
 pandas
 dataclasses
