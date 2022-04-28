@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import simpy
-from typing import Dict
+from typing import Dict, Callable
 
-from .basic import Task, Entity, Flow
+from .basic import Task, Entity, Environment
 
 
 class SimpleQueue(Entity):
@@ -20,9 +20,8 @@ class SimpleQueue(Entity):
     """
     def __init__(self,
                 name : str,
-                env : simpy.Environment, 
-                flow : Flow,
-                service_dist,
+                env : Environment, 
+                service_dist : Callable,
                 records_config: Dict,
                 queue_limit: int=None, 
                 debug: bool=False,
@@ -48,7 +47,7 @@ class SimpleQueue(Entity):
         events = { 'task_reception', 'task_service' }
 
         # initialize the entity
-        super().__init__(name,env,flow,attributes,events,records_config)
+        super().__init__(name,env,attributes,events,records_config)
 
     def run(self):
         while True:

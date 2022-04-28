@@ -2,8 +2,7 @@ import simpy
 import random
 import functools
 import pandas as pd
-
-from qsimpy import *
+import qsimpy
 
 
 if __name__ == "__main__":
@@ -12,8 +11,9 @@ if __name__ == "__main__":
     arrival = functools.partial(random.uniform, 1.1, 1.1)
     service = functools.partial(random.expovariate, 1)
 
-    env = simpy.Environment()  # Create the SimPy environment
-    flow = Flow(name='0')
+    # Create the QSimPy environment
+    # a class for keeping all of the entities and accessing their attributes
+    env = qsimpy.Environment(name='0')
 
     records_config = {
         'timestamps' : {
@@ -43,25 +43,22 @@ if __name__ == "__main__":
     }
 
     # Create the start-node and end-node
-    startnode = StartNode(
+    startnode = qsimpy.StartNode(
                         name='start-node',
-                        env=env, 
-                        flow=flow,
+                        env=env,
                         arrival_dist=arrival,
                         records_config=records_config)
 
-    queue = SimpleQueue(
+    queue = qsimpy.SimpleQueue(
                 name='queue',
                 env=env,
-                flow=flow,
                 service_dist=service,
                 queue_limit=1000,
                 records_config=records_config)
 
-    endnode = EndNode(
+    endnode = qsimpy.EndNode(
                     name='end-node',
                     env=env,
-                    flow=flow,
                     debug=False,
                     records_config=records_config)
 

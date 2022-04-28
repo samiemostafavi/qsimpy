@@ -1,9 +1,7 @@
-import simpy
 import random
 import functools
 import pandas as pd
-
-from qsimpy import *
+import qsimpy
 
 
 if __name__ == "__main__":
@@ -14,8 +12,10 @@ if __name__ == "__main__":
     service2 = functools.partial(random.expovariate, 1)
     service3 = functools.partial(random.expovariate, 1)
 
-    env = simpy.Environment()  # Create the SimPy environment
-    flow = Flow(name='0')
+
+    # Create the QSimPy environment
+    # a class for keeping all of the entities and accessing their attributes
+    env = qsimpy.Environment(name='0')
 
     records_config = {
         'timestamps' : {
@@ -56,41 +56,36 @@ if __name__ == "__main__":
     }
 
     # Create the start-node and end-node
-    startnode = StartNode(
+    startnode = qsimpy.StartNode(
                         name='start-node',
                         env=env, 
-                        flow=flow,
                         arrival_dist=arrival,
                         records_config=records_config)
 
-    queue1 = SimpleQueue(
+    queue1 = qsimpy.SimpleQueue(
                 name='queue1',
                 env=env,
-                flow=flow,
                 service_dist=service1,
                 queue_limit=1000,
                 records_config=records_config)
 
-    queue2 = SimpleQueue(
+    queue2 = qsimpy.SimpleQueue(
                 name='queue2',
                 env=env,
-                flow=flow,
                 service_dist=service2,
                 queue_limit=1000,
                 records_config=records_config)
 
-    queue3 = SimpleQueue(
+    queue3 = qsimpy.SimpleQueue(
                 name='queue3',
                 env=env,
-                flow=flow,
                 service_dist=service3,
                 queue_limit=1000,
                 records_config=records_config)
 
-    endnode = EndNode(
+    endnode = qsimpy.EndNode(
                     name='end-node',
                     env=env,
-                    flow=flow,
                     debug=False,
                     records_config=records_config)
 
