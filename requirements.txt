@@ -3,3 +3,4 @@ pyparsing
 numpy
 pandas
 dataclasses
+seaborn

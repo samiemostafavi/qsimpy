@@ -2,15 +2,26 @@ import random
 import functools
 import pandas as pd
 import qsimpy
-
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
 
     #arrival = functools.partial(random.expovariate, 0.8)
-    arrival = functools.partial(random.uniform, 1.1, 1.1)
-    service1 = functools.partial(random.expovariate, 1)
-    service2 = functools.partial(random.expovariate, 1)
-    service3 = functools.partial(random.expovariate, 1)
+    #arrival = functools.partial(random.uniform, 1.1, 1.1)
+
+    #service1 = functools.partial(random.expovariate, 1)
+    #service2 = functools.partial(random.expovariate, 1)
+    #service3 = functools.partial(random.expovariate, 1)
+
+    arrival = functools.partial(random.uniform, 4.4, 4.4)
+
+    # Gamma distributions, mean: 4
+    service1 = functools.partial(np.random.gamma, 4, 1)
+    service2 = functools.partial(np.random.gamma, 4, 1)
+    service3 = functools.partial(np.random.gamma, 4, 1)
+    
 
 
     # Create the QSimPy environment
@@ -96,7 +107,7 @@ if __name__ == "__main__":
     queue3.out = endnode
 
     # Run it
-    env.run(until=10000)
+    env.run(until=100000)
 
     # Process the collected data
     df = pd.DataFrame(endnode.received_tasks)
@@ -121,3 +132,10 @@ if __name__ == "__main__":
     del df['queue3_service_time']
 
     print(df)
+
+    sns.set_style('darkgrid')
+    sns.displot(df['end2end_delay'])
+
+    print(df['end2end_delay'].describe(percentiles=[0.9,0.99,0.999,0.9999,0.99999]))
+
+    plt.show()
