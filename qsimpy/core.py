@@ -3,6 +3,7 @@ from __future__ import annotations
 import simpy
 from dataclasses import dataclass,make_dataclass,field
 from typing import Dict, FrozenSet, Any, Callable
+from .utils import get_all_values
 
 
 @dataclass(frozen=False, eq=True)
@@ -21,33 +22,19 @@ class Task():
     id: int
     env_name: str
 
-
-def get_all_values(d):
-    """
-    get_all_values returns all the leaves of a dictionary
-
-    :param d: input dictionary
-    :return: list of values
-    """ 
-    if isinstance(d, dict):
-        for v in d.values():
-            yield from get_all_values(v)
-    elif isinstance(d, list):
-        for v in d:
-            yield from get_all_values(v)
-    else:
-        yield d 
-
-
 class Environment(simpy.Environment):
     """ A class for keeping the entities, simpy.Environment, and accessing 
         the entities' attributes
     """
     name : str
     entities : Dict[str,Entity]
-    def __init__(self, name):
+    task_records : Dict
+    def __init__(self, 
+                name : str,
+    ):
         self.name = name
         self.entities = {}
+        self.task_records = {}
 
         # initialize the simpy.Environment()
         super().__init__()
@@ -66,13 +53,11 @@ class Entity():
                 env : Environment,
                 attributes : Dict[str,Any],
                 events : FrozenSet[str],
-                records_config: Dict,
     ):
         self.name = name
         self.env = env
         self.attributes = attributes
         self.events = events
-        self.records_config = records_config
 
         # assign the run function
         self.action = self.env.process(self.run())  # starts the run() method as a SimPy process
@@ -95,17 +80,18 @@ class Entity():
                     event_name: str,
                 ) -> Task:
 
-        # record the requested timestamp
-        ts_dict = self.records_config.get('timestamps',{}).get(self.name,{})
-        if event_name in self.records_config.get('timestamps',{}).get(self.name,{}):
-            task.__setattr__(ts_dict[event_name],self.env.now)
+        if self.env.task_records:
+            # record the requested timestamp
+            ts_dict = self.env.task_records.get('timestamps',{}).get(self.name,{})
+            if event_name in self.env.task_records.get('timestamps',{}).get(self.name,{}):
+                task.__setattr__(ts_dict[event_name],self.env.now)
 
-        # record the requested attributes
-        att_dict = self.records_config.get('attributes',{}).get(self.name,{}).get(event_name,{})
-        for entity_name in att_dict:
-            for attribute in att_dict[entity_name]:
-                value = self.env.entities[entity_name].get_attribute(attribute)
-                task.__setattr__(att_dict[entity_name][attribute],value)
+            # record the requested attributes
+            att_dict = self.env.task_records.get('attributes',{}).get(self.name,{}).get(event_name,{})
+            for entity_name in att_dict:
+                for attribute in att_dict[entity_name]:
+                    value = self.env.entities[entity_name].get_attribute(attribute)
+                    task.__setattr__(att_dict[entity_name][attribute],value)
 
         return task
 
@@ -128,16 +114,17 @@ class StartNode(Entity):
     def __init__(self,
                 name : str,
                 env : Environment,
-                records_config: Dict,
                 arrival_dist : Callable,
                 initial_delay : float=0, 
-                finish_time : float = float("inf"), 
+                finish_time : float = float("inf"),
+                debug=False,
             ):
         
         # initialization
         self.arrival_dist = arrival_dist
         self.initial_delay = initial_delay
         self.finish = finish_time
+        self.debug = debug
         self.out = None
         
         # initialize the attributes
@@ -149,7 +136,7 @@ class StartNode(Entity):
         events = { 'task_generation' }
 
         # initialize the entity
-        super().__init__(name,env,attributes,events,records_config)
+        super().__init__(name,env,attributes,events)
 
     def generate_task(self):
         new_task = Task(
@@ -159,10 +146,13 @@ class StartNode(Entity):
 
         # create a GeneratedTask dataclass with the fields that come from the timestamps and attributes
         # form the fields for make_dataclass
-        fields = [ (name, float, field(default=-1)) for name in get_all_values(self.records_config) ]
-        # call make_dataclass
-        new_task.__class__ = make_dataclass('GeneratedTask', fields=fields, bases=(Task,))
-        return new_task
+        if self.env.task_records:
+            fields = [ (name, float, field(default=-1)) for name in get_all_values(self.env.task_records) ]
+            # call make_dataclass
+            new_task.__class__ = make_dataclass('GeneratedTask', fields=fields, bases=(Task,))
+            return new_task
+        else:
+            return new_task
 
     def run(self):
         """The generator function used in simulations.
@@ -177,9 +167,13 @@ class StartNode(Entity):
             # add event records
             new_task = self.add_records(task=new_task, event_name='task_generation')
 
+            if self.debug:
+                print(new_task)
+
             if self.out is not None:
                 self.out.put(new_task)
 
+            
 
 
 class EndNode(Entity):
@@ -193,8 +187,7 @@ class EndNode(Entity):
     """
     def __init__(self,
                 name : str,
-                env : Environment, 
-                records_config: Dict,
+                env : Environment,
                 debug=False,
             ):
 
@@ -211,7 +204,7 @@ class EndNode(Entity):
         events = { 'task_reception' }
 
         # initialize the entity
-        super().__init__(name,env,attributes,events,records_config)
+        super().__init__(name,env,attributes,events)
 
     def run(self):
         while True:

@@ -23,88 +23,83 @@ if __name__ == "__main__":
     service3 = functools.partial(np.random.gamma, 4, 1)
     
 
-
     # Create the QSimPy environment
     # a class for keeping all of the entities and accessing their attributes
     env = qsimpy.Environment(name='0')
-
-    records_config = {
-        'timestamps' : {
-            'start-node' : {
-                'task_generation':'start_time',
-            },
-            'queue1' : {
-                'task_reception':'queue1_queue_time',
-                'task_service':'queue1_service_time',
-            },
-            'queue2' : {
-                'task_reception':'queue2_queue_time',
-                'task_service':'queue2_service_time',
-            },
-            'queue3' : {
-                'task_reception':'queue3_queue_time',
-                'task_service':'queue3_service_time',
-            },
-            'end-node' : {
-                'task_reception':'end_time',
-            }
-        },
-        'attributes' : {
-            'start-node' : {
-                'task_generation' : {
-                    'queue1' : {
-                        'queue_length':'queue_length1',
-                    },
-                    'queue2' : {
-                        'queue_length':'queue_length2',
-                    },
-                    'queue3' : {
-                        'queue_length':'queue_length3',
-                    },
-                },
-            },
-        },
-    }
 
     # Create the start-node and end-node
     startnode = qsimpy.StartNode(
                         name='start-node',
                         env=env, 
-                        arrival_dist=arrival,
-                        records_config=records_config)
+                        arrival_dist=arrival)
 
     queue1 = qsimpy.SimpleQueue(
                 name='queue1',
                 env=env,
                 service_dist=service1,
-                queue_limit=1000,
-                records_config=records_config)
+                queue_limit=1000)
 
     queue2 = qsimpy.SimpleQueue(
                 name='queue2',
                 env=env,
                 service_dist=service2,
-                queue_limit=1000,
-                records_config=records_config)
+                queue_limit=1000)
 
     queue3 = qsimpy.SimpleQueue(
                 name='queue3',
                 env=env,
                 service_dist=service3,
-                queue_limit=1000,
-                records_config=records_config)
+                queue_limit=1000)
 
     endnode = qsimpy.EndNode(
                     name='end-node',
                     env=env,
-                    debug=False,
-                    records_config=records_config)
+                    debug=False)
 
     # Wire start-node, queues, and end-node together
     startnode.out = queue1
     queue1.out = queue2
     queue2.out = queue3
     queue3.out = endnode
+
+    # records to save on the tasks during the run
+    env.task_records = {
+        'timestamps' : {
+            startnode.name : {
+                'task_generation':'start_time',
+            },
+            queue1.name : {
+                'task_reception':'queue1_queue_time',
+                'task_service':'queue1_service_time',
+            },
+            queue2.name : {
+                'task_reception':'queue2_queue_time',
+                'task_service':'queue2_service_time',
+            },
+            queue3.name : {
+                'task_reception':'queue3_queue_time',
+                'task_service':'queue3_service_time',
+            },
+            endnode.name : {
+                'task_reception':'end_time',
+            }
+        },
+        'attributes' : {
+            startnode.name : {
+                'task_generation' : {
+                    queue1.name : {
+                        'queue_length':'queue_length1',
+                    },
+                    queue2.name : {
+                        'queue_length':'queue_length2',
+                    },
+                    queue3.name : {
+                        'queue_length':'queue_length3',
+                    },
+                },
+            },
+        },
+    }
 
     # Run it
     env.run(until=100000)
@@ -134,8 +129,10 @@ if __name__ == "__main__":
     print(df)
 
     sns.set_style('darkgrid')
-    sns.displot(df['end2end_delay'])
+    sns.displot(df['end2end_delay'],kde=True)
 
     print(df['end2end_delay'].describe(percentiles=[0.9,0.99,0.999,0.9999,0.99999]))
 
     plt.show()
+
+    

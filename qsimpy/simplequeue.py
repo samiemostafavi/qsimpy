@@ -3,11 +3,11 @@ from __future__ import annotations
 import simpy
 from typing import Dict, Callable
 
-from .basic import Task, Entity, Environment
+from .core import Task, Entity, Environment
 
 
 class SimpleQueue(Entity):
-    """ Models a queue with a service delay process and buffer size limit in number of tasks.
+    """ Models a FIFO queue with a service delay process and buffer size limit in number of tasks.
         Set the "out" member variable to the entity to receive the task.
         Parameters
         ----------
@@ -22,7 +22,6 @@ class SimpleQueue(Entity):
                 name : str,
                 env : Environment, 
                 service_dist : Callable,
-                records_config: Dict,
                 queue_limit: int=None, 
                 debug: bool=False,
             ):
@@ -47,44 +46,58 @@ class SimpleQueue(Entity):
         events = { 'task_reception', 'task_service' }
 
         # initialize the entity
-        super().__init__(name,env,attributes,events,records_config)
+        super().__init__(name,env,attributes,events)
 
     def run(self):
+        """
+        serving tasks
+        """
         while True:
+            
+            #server takes the head task from the queue
             task = (yield self.store.get())
+            self.attributes['queue_length'] -= 1
 
-            # add event records
+            # task_service event records
             task = self.add_records(task=task, event_name='task_service')
 
+            # get a service duration 
             self.attributes['is_busy'] = True
-            self.attributes['queue_length'] -= 1
             new_service_duration = self.service_dist()
             self.attributes['last_service_duration'] = new_service_duration
             self.attributes['last_service_time'] = self.env.now
+
+            # wait until the task is served
             yield self.env.timeout(new_service_duration)
 
+            # put it on the output
             self.out.put(task)
             self.attributes['is_busy'] = False
+
             if self.debug:
                 print(task)
 
     def put(self, 
             task: Task
         ):
+        """
+        queuing tasks
+        """
 
+        # increase the received counter
         self.attributes['tasks_received'] += 1
-        tmp = self.attributes['queue_length'] + 1
 
+        # check if we need to drop the task due to buffer size limit
         drop = False
-
         if self.queue_limit is not None:       
-            if tmp >= self.queue_limit:
+            if self.attributes['queue_length']+1 >= self.queue_limit:
                 self.attributes['tasks_dropped'] += 1
                 drop = True
 
         if not drop:
-            # add event records
+            # task_reception event records
             task = self.add_records(task=task, event_name='task_reception')
 
-            self.attributes['queue_length'] = tmp
+            # store the task in the queue
+            self.attributes['queue_length'] += 1
             return self.store.put(task)
