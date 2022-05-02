@@ -15,7 +15,7 @@ if __name__ == "__main__":
     #service2 = functools.partial(random.expovariate, 1)
     #service3 = functools.partial(random.expovariate, 1)
 
-    arrival = functools.partial(random.uniform, 4.4, 4.4)
+    arrival = functools.partial(random.uniform, 4.1, 4.1)
 
     # Gamma distributions, mean: 4
     service1 = functools.partial(np.random.gamma, 4, 1)
@@ -28,64 +28,71 @@ if __name__ == "__main__":
     env = qsimpy.Environment(name='0')
 
     # Create the start-node and end-node
-    startnode = qsimpy.StartNode(
+    source = qsimpy.Source(
                         name='start-node',
                         env=env, 
-                        arrival_dist=arrival)
+                        arrival_dist=arrival,
+                        task_type='0',
+    )
 
     queue1 = qsimpy.SimpleQueue(
                 name='queue1',
                 env=env,
                 service_dist=service1,
-                queue_limit=1000)
+                queue_limit=20,
+    )
 
     queue2 = qsimpy.SimpleQueue(
                 name='queue2',
                 env=env,
                 service_dist=service2,
-                queue_limit=1000)
+                queue_limit=20,
+    )
 
     queue3 = qsimpy.SimpleQueue(
                 name='queue3',
                 env=env,
                 service_dist=service3,
-                queue_limit=1000)
+                queue_limit=20,
+    )
 
-    endnode = qsimpy.EndNode(
-                    name='end-node',
+    sink = qsimpy.Sink(
+                    name='sink',
                     env=env,
-                    debug=False)
+                    debug=False,
+    )
 
-    # Wire start-node, queues, and end-node together
-    startnode.out = queue1
+    # Wire source, queues, and sink together
+    source.out = queue1
     queue1.out = queue2
+    queue1.drop = sink
     queue2.out = queue3
-    queue3.out = endnode
+    queue2.drop = sink
+    queue3.out = sink
+    queue3.drop = sink
 
     # records to save on the tasks during the run
     env.task_records = {
         'timestamps' : {
-            startnode.name : {
+            source.name : {
                 'task_generation':'start_time',
             },
             queue1.name : {
                 'task_reception':'queue1_queue_time',
-                'task_service':'queue1_service_time',
+                'service_start':'queue1_service_time',
             },
             queue2.name : {
                 'task_reception':'queue2_queue_time',
-                'task_service':'queue2_service_time',
+                'service_start':'queue2_service_time',
             },
             queue3.name : {
                 'task_reception':'queue3_queue_time',
-                'task_service':'queue3_service_time',
+                'service_start':'queue3_service_time',
+                'service_end':'end_time',
             },
-            endnode.name : {
-                'task_reception':'end_time',
-            }
         },
         'attributes' : {
-            startnode.name : {
+            source.name : {
                 'task_generation' : {
                     queue1.name : {
                         'queue_length':'queue_length1',
@@ -102,10 +109,16 @@ if __name__ == "__main__":
     }
 
     # Run it
-    env.run(until=100000)
+    env.run(until=1000000)
 
     # Process the collected data
-    df = pd.DataFrame(endnode.received_tasks)
+    df = pd.DataFrame(sink.received_tasks)
+    df_dropped = df[df.end_time==-1]
+    print(df_dropped.shape)
+    df_finished = df[df.end_time>=0]
+    print(df_finished.shape)
+    df = df_finished
+
     df['end2end_delay'] = df['end_time']-df['start_time']
 
     df['queue1_queue_delay'] = df['queue1_service_time']-df['queue1_queue_time']

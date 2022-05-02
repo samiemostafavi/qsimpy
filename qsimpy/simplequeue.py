@@ -18,19 +18,21 @@ class SimpleQueue(Entity):
         queue_limit : integer (or None)
             a buffer size limit in number of tasks for the queue (does not include the task in service).
     """
+    store : simpy.Store
+    service_dist : Callable
+    queue_limit : float
+
     def __init__(self,
                 name : str,
                 env : Environment, 
                 service_dist : Callable,
-                queue_limit: int=None, 
-                debug: bool=False,
+                queue_limit: int = None, 
+                debug: bool = False,
             ):
 
         self.store = simpy.Store(env)
         self.service_dist = service_dist
-        self.out = None
         self.queue_limit = queue_limit
-        self.debug = debug
 
         # initialize the attributes
         attributes = {
@@ -43,12 +45,12 @@ class SimpleQueue(Entity):
         }
 
         # advertize the events
-        events = { 'task_reception', 'task_service' }
+        events = { 'task_reception', 'service_start', 'service_end' }
 
         # initialize the entity
-        super().__init__(name,env,attributes,events)
+        super().__init__(name,env,attributes,events,debug)
 
-    def run(self):
+    def run(self) -> None:
         """
         serving tasks
         """
@@ -58,8 +60,8 @@ class SimpleQueue(Entity):
             task = (yield self.store.get())
             self.attributes['queue_length'] -= 1
 
-            # task_service event records
-            task = self.add_records(task=task, event_name='task_service')
+            # EVENT service_start
+            task = self.add_records(task=task, event_name='service_start')
 
             # get a service duration 
             self.attributes['is_busy'] = True
@@ -69,17 +71,22 @@ class SimpleQueue(Entity):
 
             # wait until the task is served
             yield self.env.timeout(new_service_duration)
-
-            # put it on the output
-            self.out.put(task)
             self.attributes['is_busy'] = False
+
+            # EVENT service_end
+            task = self.add_records(task=task, event_name='service_end')
 
             if self.debug:
                 print(task)
 
+            # put it on the output
+            if self.out is not None:
+                self.out.put(task)
+            
+
     def put(self, 
             task: Task
-        ):
+        ) -> None :
         """
         queuing tasks
         """
@@ -87,17 +94,24 @@ class SimpleQueue(Entity):
         # increase the received counter
         self.attributes['tasks_received'] += 1
 
+        # EVENT task_reception
+        task = self.add_records(task=task, event_name='task_reception')
+
         # check if we need to drop the task due to buffer size limit
         drop = False
         if self.queue_limit is not None:       
             if self.attributes['queue_length']+1 >= self.queue_limit:
-                self.attributes['tasks_dropped'] += 1
                 drop = True
 
-        if not drop:
-            # task_reception event records
-            task = self.add_records(task=task, event_name='task_reception')
-
+        if drop:
+            # drop the task
+            self.attributes['tasks_dropped'] += 1
+            if self.drop is not None:
+                self.drop.put(task)
+        else:
             # store the task in the queue
             self.attributes['queue_length'] += 1
-            return self.store.put(task)
+            self.store.put(task)
+
+        
+

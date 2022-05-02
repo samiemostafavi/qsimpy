@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import simpy
 from dataclasses import dataclass,make_dataclass,field
-from typing import Dict, FrozenSet, Any, Callable
+from typing import Dict, FrozenSet, Any, Callable, List
 from .utils import get_all_values
 
 
@@ -16,25 +16,23 @@ class Task():
         ----------
         id : int
             an identifier for the task
-        env_name : str
-            string that can be used to identify a qsimpy env
+        task_type : str
+            string that can be used to identify a task type e.g. cross traffic
     """
     id: int
-    env_name: str
+    task_type: str
 
 class Environment(simpy.Environment):
     """ A class for keeping the entities, simpy.Environment, and accessing 
         the entities' attributes
     """
     name : str
-    entities : Dict[str,Entity]
-    task_records : Dict
+    entities : Dict[str,Entity] = {}
+    task_records : Dict = {}
     def __init__(self, 
                 name : str,
     ):
         self.name = name
-        self.entities = {}
-        self.task_records = {}
 
         # initialize the simpy.Environment()
         super().__init__()
@@ -48,22 +46,32 @@ class Entity():
     env : Environment
     attributes : Dict[str,Any]
     events : FrozenSet[str]
+    out : Entity = None
+    drop : Entity = None
+    debug : bool = False
     def __init__(self,
                 name : str,
                 env : Environment,
                 attributes : Dict[str,Any],
                 events : FrozenSet[str],
+                debug : bool = False,
     ):
         self.name = name
         self.env = env
         self.attributes = attributes
         self.events = events
+        self.debug = debug
 
         # assign the run function
         self.action = self.env.process(self.run())  # starts the run() method as a SimPy process
 
         # add it to the environment
         self.env.add_entity(self)
+
+    def run(self) -> None:
+        pass
+    def put(self, Task) -> None:
+        pass
 
     def get_attribute(self,
                     name: str,
@@ -73,8 +81,6 @@ class Entity():
         return self.attributes
     def get_events_names(self) -> FrozenSet[str]:
         return self.events
-    def run(self) -> None:
-        pass
     def add_records(self,
                     task: Task,
                     event_name: str,
@@ -96,7 +102,7 @@ class Entity():
         return task
 
 
-class StartNode(Entity):
+class Source(Entity):
     """ Generates tasks with given inter-arrival time distribution.
         Set the "out" member variable to the entity to receive the task.
 
@@ -104,6 +110,8 @@ class StartNode(Entity):
         ----------
         env : Environment
             the QSimPy simulation environment
+        task_type : str
+            type of the tasks being generated
         arrival_dist : function
             a no parameter function that returns the successive inter-arrival times of the tasks
         initial_delay : number
@@ -111,37 +119,41 @@ class StartNode(Entity):
         finish_time : number
             Stops generation at the finish time. Default is infinite
     """
+    task_type : str
+    arrival_dist : Callable
+    initial_delay : float
+    finish_time : float
     def __init__(self,
                 name : str,
                 env : Environment,
+                task_type : str,
                 arrival_dist : Callable,
                 initial_delay : float=0, 
                 finish_time : float = float("inf"),
-                debug=False,
+                debug : bool = False,
             ):
         
         # initialization
+        self.task_type = task_type
         self.arrival_dist = arrival_dist
         self.initial_delay = initial_delay
         self.finish = finish_time
-        self.debug = debug
-        self.out = None
         
         # initialize the attributes
         attributes = {
-            'tasks_generated':0,
+            'tasks_generated' : 0,
         }
 
         # advertize the events
         events = { 'task_generation' }
 
         # initialize the entity
-        super().__init__(name,env,attributes,events)
+        super().__init__(name,env,attributes,events,debug)
 
     def generate_task(self):
         new_task = Task(
             id=self.attributes['tasks_generated'], 
-            env_name=self.env.name
+            task_type=self.task_type,
         )
 
         # create a GeneratedTask dataclass with the fields that come from the timestamps and attributes
@@ -164,7 +176,7 @@ class StartNode(Entity):
             new_task = self.generate_task()
             self.attributes['tasks_generated'] += 1
             
-            # add event records
+            # EVENT task_generation
             new_task = self.add_records(task=new_task, event_name='task_generation')
 
             if self.debug:
@@ -175,9 +187,8 @@ class StartNode(Entity):
 
             
 
-
-class EndNode(Entity):
-    """ The end-node that receives tasks and collects delay information.
+class Node(Entity):
+    """ The node object that receives tasks and collects delay information and sends it
         Parameters
         ----------
         env : simpy.Environment
@@ -185,15 +196,14 @@ class EndNode(Entity):
         debug : boolean
             if true then the contents of each task will be printed as it is received.
     """
+    store : simpy.Store
     def __init__(self,
                 name : str,
                 env : Environment,
-                debug=False,
+                debug : bool =False,
             ):
 
         self.store = simpy.Store(env)
-        self.debug = debug
-        self.received_tasks = []
 
         # initialize the attributes
         attributes = {
@@ -204,13 +214,60 @@ class EndNode(Entity):
         events = { 'task_reception' }
 
         # initialize the entity
-        super().__init__(name,env,attributes,events)
+        super().__init__(name,env,attributes,events,debug)
 
     def run(self):
         while True:
             task = (yield self.store.get())
 
-            # add event records
+            # EVENT task_reception
+            task = self.add_records(task=task, event_name='task_reception')
+
+            self.attributes['tasks_received'] += 1
+            if self.debug:
+                print(task)
+
+            if self.out is not None:
+                self.out.put(task)
+            
+    def put(self, task):
+        self.store.put(task)
+
+
+class Sink(Entity):
+    """ The sink that receives all tasks: dropped or finished
+        Parameters
+        ----------
+        env : simpy.Environment
+            the simulation environment
+        debug : boolean
+            if true then the contents of each task will be printed as it is received.
+    """
+    received_tasks : List[Task] = []
+    def __init__(self,
+                name : str,
+                env : Environment,
+                debug : bool =False,
+            ):
+
+        self.store = simpy.Store(env)
+
+        # initialize the attributes
+        attributes = {
+            'tasks_received':0,
+        }
+
+        # advertize the events
+        events = { 'task_reception' }
+
+        # initialize the entity
+        super().__init__(name,env,attributes,events,debug)
+
+    def run(self):
+        while True:
+            task = (yield self.store.get())
+
+            # EVENT task_reception
             task = self.add_records(task=task, event_name='task_reception')
 
             self.attributes['tasks_received'] += 1
