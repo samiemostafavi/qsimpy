@@ -38,6 +38,7 @@ class SimpleQueue(Entity):
         attributes = {
             'tasks_received':0,
             'tasks_dropped':0,
+            'tasks_completed':0,
             'queue_length':0,
             'last_service_duration':0,
             'last_service_time':0,
@@ -75,6 +76,7 @@ class SimpleQueue(Entity):
 
             # EVENT service_end
             task = self.add_records(task=task, event_name='service_end')
+            self.attributes['tasks_completed'] += 1
 
             if self.debug:
                 print(task)

@@ -77,6 +77,10 @@ if __name__ == "__main__":
     # Run it
     env.run(until=100000)
 
+    print("Source generated {0} tasks".format(source.get_attribute('tasks_generated')))
+    print("Queue completed {0}, dropped {1}".format(queue.get_attribute('tasks_completed'),queue.get_attribute('tasks_dropped')))
+    print("Sink received {0} tasks".format(sink.get_attribute('tasks_received')))
+
     # Process the collected data
     df = pd.DataFrame(sink.received_tasks)
 
