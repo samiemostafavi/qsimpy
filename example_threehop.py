@@ -15,13 +15,15 @@ if __name__ == "__main__":
     #service2 = functools.partial(random.expovariate, 1)
     #service3 = functools.partial(random.expovariate, 1)
 
+    np.random.seed(0)
+
     arrival = functools.partial(random.uniform, 4.1, 4.1)
 
     # Gamma distributions, mean: 4
     service1 = functools.partial(np.random.gamma, 4, 1)
     service2 = functools.partial(np.random.gamma, 4, 1)
     service3 = functools.partial(np.random.gamma, 4, 1)
-    
+
 
     # Create the QSimPy environment
     # a class for keeping all of the entities and accessing their attributes
