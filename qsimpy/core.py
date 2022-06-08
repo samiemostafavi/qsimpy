@@ -5,7 +5,6 @@ from dataclasses import dataclass,make_dataclass,field
 from typing import Dict, FrozenSet, Any, Callable, List
 from .utils import get_all_values
 
-
 @dataclass(frozen=False, eq=True)
 class Task():
     """ A very simple dataclass that represents a task.
@@ -35,7 +34,7 @@ class Environment(simpy.Environment):
         self.name = name
 
         # initialize the simpy.Environment()
-        super().__init__()
+        simpy.Environment.__init__(self)
     
     def add_entity(self, entity : Entity) -> None:
         self.entities[entity.name] = entity
