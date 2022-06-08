@@ -3,4 +3,5 @@ pyparsing
 numpy
 pandas
 dataclasses
-seaborn
+seaborn==0.11.2
+pyarrow

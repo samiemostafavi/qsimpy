@@ -1,10 +1,10 @@
-import random
 import functools
 import pandas as pd
 import qsimpy
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+import time
 
 if __name__ == "__main__":
 
@@ -12,12 +12,14 @@ if __name__ == "__main__":
     #arrival = functools.partial(random.uniform, 1.1, 1.1)
     #service = functools.partial(random.expovariate, 1)
 
-    np.random.seed(0)
+    arrival_rate = 0.095
+    rng_arrival = np.random.default_rng(100234)
+    arrival = functools.partial(rng_arrival.uniform, 1.00/arrival_rate, 1.00/arrival_rate)
 
-    arrival = functools.partial(random.uniform, 4.1, 4.1)
-
-    # Gamma distributions, mean: 4
-    service = functools.partial(np.random.gamma, 4, 1)
+    # Gamma distribution
+    avg_service_rate = 0.10
+    rng_service = np.random.default_rng(120034)
+    service = functools.partial(rng_service.gamma, 1.00/avg_service_rate, 1)
 
     # Create the QSimPy environment
     # a class for keeping all of the entities and accessing their attributes
@@ -36,7 +38,7 @@ if __name__ == "__main__":
                 name='queue',
                 env=env,
                 service_dist=service,
-                queue_limit=20
+                queue_limit=None,
     )
 
     # a sink: to capture both finished tasks and dropped tasks
@@ -77,10 +79,17 @@ if __name__ == "__main__":
     }
 
     # Run it
-    env.run(until=100000)
+    start = time.time()
+    env.run(until=1000000)
+    end = time.time()
+    print("Run finished in {0} seconds".format(end - start))
 
     print("Source generated {0} tasks".format(source.get_attribute('tasks_generated')))
-    print("Queue completed {0}, dropped {1}".format(queue.get_attribute('tasks_completed'),queue.get_attribute('tasks_dropped')))
+    print("Queue completed {0}, dropped {1}".format(
+            queue.get_attribute('tasks_completed'),
+            queue.get_attribute('tasks_dropped'),
+        )
+    )
     print("Sink received {0} tasks".format(sink.get_attribute('tasks_received')))
 
     # Process the collected data
@@ -96,9 +105,13 @@ if __name__ == "__main__":
     df['service_delay'] = df['end_time']-df['service_time']
     df['queue_delay'] = df['service_time']-df['queue_time']
     df['time_in_service'] = df.apply(
-                                lambda row: (row.last_service_duration - (row.start_time-row.last_service_time)) if row.queue_is_busy else 0,
+                                lambda row: (row.start_time-row.last_service_time) if row.queue_is_busy else None,
                                 axis=1,
                             )
+    #df['time_in_service'] = df.apply(
+    #                            lambda row: (row.last_service_duration - (row.start_time-row.last_service_time)) if row.queue_is_busy else None,
+    #                            axis=1,
+    #                        )
 
     del df['end_time']
     del df['start_time']
@@ -110,15 +123,31 @@ if __name__ == "__main__":
 
     print(df)
 
+    df.to_parquet('dataset_onehop.parquet')
+
+    # plot end-to-end delay profile
     sns.set_style('darkgrid')
     sns.displot(df['end2end_delay'],kde=True)
+    plt.savefig('end2end.png')
+
     sns.displot(df['service_delay'],kde=True)
+    plt.savefig('service_delay.png')
+
     sns.displot(df['queue_delay'],kde=True)
+    plt.savefig('queue_delay.png')
+
+    sns.displot(df['time_in_service'],kde=True)
+    plt.savefig('time_in_service.png')
+
+    sns.pairplot(
+        data=df[['queue_length','time_in_service']],
+        kind="kde",
+        corner=True,
+    )
+    plt.savefig('pairplot.png')
 
     print(df['end2end_delay'].describe(percentiles=[0.9,0.99,0.999,0.9999,0.99999]))
     print(df['service_delay'].describe(percentiles=[0.9,0.99,0.999,0.9999,0.99999]))
     print(df['queue_delay'].describe(percentiles=[0.9,0.99,0.999,0.9999,0.99999]))
+    print(df['time_in_service'].describe(percentiles=[0.9,0.99,0.999,0.9999,0.99999]))
 
-    plt.show()
-
-    
