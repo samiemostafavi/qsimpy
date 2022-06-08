@@ -27,25 +27,25 @@ if __name__ == "__main__":
 
     # Create a source
     source = qsimpy.Source(
-                        name='start-node',
-                        env=env,
-                        arrival_dist=arrival,
-                        task_type='0',
+        name='start-node',
+        env=env,
+        arrival_dist=arrival,
+        task_type='0',
     )
 
     # a queue
     queue = qsimpy.SimpleQueue(
-                name='queue',
-                env=env,
-                service_dist=service,
-                queue_limit=None,
+        name='queue',
+        env=env,
+        service_dist=service,
+        queue_limit=None,
     )
 
     # a sink: to capture both finished tasks and dropped tasks
     sink = qsimpy.Sink(
-                    name='sink',
-                    env=env,
-                    debug=False,
+        name='sink',
+        env=env,
+        debug=False,
     )
 
     # Wire start-node, queue, end-node, and sink together
