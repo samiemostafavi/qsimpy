@@ -133,3 +133,4 @@ dmypy.json
 *.parquet
 *.png
 *.jpg
+results
