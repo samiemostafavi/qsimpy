@@ -23,7 +23,7 @@ if __name__ == "__main__":
         seed = 0,
         gamma_concentration = 5,
         gamma_rate = 0.5,
-        gpd_concentration = 0.3, #0.4, 0.3, 0.2, 0.1, 0.01
+        gpd_concentration = 0.4, #0.4, 0.3, 0.2, 0.1, 0.01
         threshold_qnt = 0.8,
         dtype = np.float32,
     )
