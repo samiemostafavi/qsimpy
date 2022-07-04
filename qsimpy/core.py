@@ -183,7 +183,7 @@ class Source(Entity):
     }
     task_type : str
     initial_delay : float = 0
-    finish_time : float = float("inf")
+    finish_time : float = None
 
     # Arrival random process
     arrival_rp : RandomProcess
@@ -230,7 +230,9 @@ class Source(Entity):
         """The generator function used in simulations.
         """
         yield self._env.timeout(self.initial_delay)
-        while self._env.now < self.finish_time:
+        if self.finish_time is None:
+            _finish_time = float('inf')
+        while self._env.now < _finish_time:
             # wait for next transmission
             yield self._env.timeout(self.arrival_rp.sample())
             new_task = self.generate_task()
