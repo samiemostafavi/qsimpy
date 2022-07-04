@@ -1,4 +1,3 @@
-import functools
 import pandas as pd
 import qsimpy
 import numpy as np
@@ -8,6 +7,8 @@ import time
 import psutil as ps
 import polars as pl
 import os
+
+from qsimpy.random import Deterministic, Gamma
 
 # https://stackoverflow.com/questions/41240470/python-simpy-memory-usage-with-large-numbers-of-objects-processes
 
@@ -48,47 +49,49 @@ if __name__ == "__main__":
     # memory usage before we do anything
     print("before all: ", ps.virtual_memory())
 
-    #arrival = functools.partial(random.expovariate, 0.8)
-    #arrival = functools.partial(random.uniform, 1.1, 1.1)
-    #service = functools.partial(random.expovariate, 1)
-
-    arrival_rate = 0.095
-    rng_arrival = np.random.default_rng(100234)
-    arrival = functools.partial(rng_arrival.uniform, 1.00/arrival_rate, 1.00/arrival_rate)
-
-    # Gamma distribution
-    avg_service_rate = 0.10
-    rng_service = np.random.default_rng(120034)
-    service = functools.partial(rng_service.gamma, 1.00/avg_service_rate, 1)
-
-    # Create the QSimPy environment
+# Create the QSimPy environment
     # a class for keeping all of the entities and accessing their attributes
-    env = qsimpy.Environment(name='0')
+    model = qsimpy.Model(name='test model')
+
+    # arrival process uniform
+    arrival = Deterministic(
+        rate = 0.095,
+        seed = 100234,
+        dtype = 'float64',
+    )
 
     # Create a source
     source = qsimpy.Source(
         name='start-node',
-        env=env,
-        arrival_dist=arrival,
+        arrival_rp=arrival,
         task_type='0',
+    )
+    model.add_entity(source)
+
+    # service process a Gamma distribution
+    avg_service_rate = 0.10
+    service = Gamma(
+        shape = 1.00/avg_service_rate, 
+        scale = 1.00,
+        seed  = 120034,
+        dtype = 'float64'
     )
 
     # a queue
     queue = qsimpy.SimpleQueue(
         name='queue',
-        env=env,
-        service_dist=service,
+        service_rp= service,
         queue_limit=None,
     )
+    model.add_entity(queue)
+
 
     # a sink: to capture both finished tasks and dropped tasks (compare PolarSink vs Sink)
     sink = qsimpy.PolarSink(
         name='sink',
-        env=env,
         debug=False,
         batch_size = 10000,
     )
-
     # define postprocess function
     def process_time_in_service(df):
  
@@ -105,14 +108,15 @@ if __name__ == "__main__":
 
         return df
 
-    sink.post_process_fn = process_time_in_service
+    sink.set_post_process_fn(fn=process_time_in_service)
+    model.add_entity(sink)
 
     # Wire start-node, queue, end-node, and sink together
-    source.out = queue
-    queue.out = sink
-    queue.drop = sink
+    source.out = queue.name
+    queue.out = sink.name
+    queue.drop = sink.name
 
-    env.task_records = {
+    model.set_task_records({
         'timestamps' : {
             source.name : {
                 'task_generation':'start_time',
@@ -135,17 +139,20 @@ if __name__ == "__main__":
                 },
             },
         },
-    }
+    })
+
+    # prepare for run
+    model.prepare_for_run(debug=False)
 
     # memory usage before we do anything
     print("before start: ", ps.virtual_memory())
 
     # create memory calculation events
-    memory = MemoryUse(env)
+    memory = MemoryUse(model.env)
 
     # Run it
     start = time.time()
-    env.run(until=1000000)
+    model.env.run(until=1000000)
     end = time.time()
     print("Run finished in {0} seconds".format(end - start))
 

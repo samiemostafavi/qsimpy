@@ -401,39 +401,53 @@ class PolarSink(Entity):
         debug : boolean
             if true then the contents of each task will be printed as it is received.
     """
-    _pl_received_tasks : pl.DataFrame = None
-    _received_tasks : List[Task] = []
-    post_process_fn : Callable = None
-    def __init__(self,
-                name : str,
-                env : Environment,
-                debug : bool =False,
-                batch_size : int = 10000,
-            ):
 
-        self.batch_size = batch_size
-        self.store = simpy.Store(env)
+    type : str = 'polarsink'
+    events : FrozenSet[str] = { 
+        'task_reception'
+    }
+    attributes : Dict[str,Any] = {
+        'tasks_received':0,
+    }
+    batch_size : int = 10000,
 
-        # initialize the attributes
-        attributes = {
-            'tasks_received':0,
-        }
+    _pl_received_tasks : pl.DataFrame = PrivateAttr()
+    _received_tasks : List[Task] = PrivateAttr()
+    _store : simpy.Store = PrivateAttr()
+    _post_process_fn : Callable = PrivateAttr()
 
-        # advertize the events
-        events = { 'task_reception' }
+    def clean_attributes(self):
+        for att in self.attributes:
+            self.attributes[att] = 0
 
-        # initialize the entity
-        super().__init__(name,env,attributes,events,debug)
+    def prepare_for_run(self, model: Model, env: simpy.Environment, debug: bool):
+        self._model = model
+        self._env = env
+        self._debug = debug
+
+        if self.out is not None:
+            self._out = model.entities[self.out]
+        if self.drop is not None:
+            self._drop = model.entities[self.drop]
+
+        self._store = simpy.Store(env)
+        self._received_tasks = []
+        self._pl_received_tasks = None
+
+        self._action = model._env.process(self.run())  # starts the run() method as a SimPy process
+
+    def set_post_process_fn(self, fn : Callable):
+        self._post_process_fn = fn
 
     def run(self):
         while True:
-            task = (yield self.store.get())
+            task = (yield self._store.get())
 
             # EVENT task_reception
             task = self.add_records(task=task, event_name='task_reception')
 
             self.attributes['tasks_received'] += 1
-            if self.debug:
+            if self._debug:
                 print(task)
 
             # save the received task into the pandas dataframe
@@ -443,10 +457,10 @@ class PolarSink(Entity):
                 pddf = pd.DataFrame(self._received_tasks)
                 # save the received task into a Polars dataframe
                 if self._pl_received_tasks is None:
-                    self._pl_received_tasks = pandas_to_polars(pddf,self.post_process_fn)
+                    self._pl_received_tasks = pandas_to_polars(pddf,self._post_process_fn)
                 else:
                     self._pl_received_tasks = self._pl_received_tasks.vstack(
-                        pandas_to_polars(pddf,self.post_process_fn)
+                        pandas_to_polars(pddf,self._post_process_fn)
                     )
                 del task, pddf
                 self._received_tasks = []
@@ -455,14 +469,14 @@ class PolarSink(Entity):
     def received_tasks(self):
         pddf = pd.DataFrame(self._received_tasks)
         if self._pl_received_tasks is None:
-            self._pl_received_tasks = pandas_to_polars(pddf,self.post_process_fn)
+            self._pl_received_tasks = pandas_to_polars(pddf,self._post_process_fn)
         else:
             self._pl_received_tasks = self._pl_received_tasks.vstack(
-                pandas_to_polars(pddf,self.post_process_fn)
+                pandas_to_polars(pddf,self._post_process_fn)
             )
         del pddf
         self._received_tasks = []
         return self._pl_received_tasks
 
     def put(self, task):
-        self.store.put(task)
+        self._store.put(task)
