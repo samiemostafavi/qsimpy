@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from pydantic import PrivateAttr
 import simpy
-from typing import Dict, Callable
+from typing import Dict, FrozenSet, Any
+from qsimpy.random import RandomProcess
 
-from .core import Task, Entity, Environment
+from .core import Task, Entity, Model
 
 
 class SimpleQueue(Entity):
@@ -18,38 +20,40 @@ class SimpleQueue(Entity):
         queue_limit : integer (or None)
             a buffer size limit in number of tasks for the queue (does not include the task in service).
     """
-    store : simpy.Store
-    service_dist : Callable
-    queue_limit : float
+    type : str = 'simplequeue'
+    events : FrozenSet[str] = { 
+        'task_reception', 
+        'service_start', 
+        'service_end' 
+    }
+    attributes : Dict[str,Any] = {
+        'tasks_received':0,
+        'tasks_dropped':0,
+        'tasks_completed':0,
+        'queue_length':0,
+        'last_service_duration':0,
+        'last_service_time':0,
+        'is_busy':False,
+    }
 
-    def __init__(self,
-                name : str,
-                env : Environment, 
-                service_dist : Callable,
-                queue_limit: int = None, 
-                debug: bool = False,
-            ):
+    # Service delay random process
+    service_rp : RandomProcess
+    queue_limit : float = None
 
-        self.store = simpy.Store(env)
-        self.service_dist = service_dist
-        self.queue_limit = queue_limit
+    _store : simpy.Store = PrivateAttr()
+    _debug : bool = PrivateAttr()
 
-        # initialize the attributes
-        attributes = {
-            'tasks_received':0,
-            'tasks_dropped':0,
-            'tasks_completed':0,
-            'queue_length':0,
-            'last_service_duration':0,
-            'last_service_time':0,
-            'is_busy':False,
-        }
+    def __init__(self, **data):
+        if isinstance(data['service_rp'], RandomProcess):
+            data['service_rp'] = data['service_rp'].dict()
+        super().__init__(**data)
 
-        # advertize the events
-        events = { 'task_reception', 'service_start', 'service_end' }
-
-        # initialize the entity
-        super().__init__(name,env,attributes,events,debug)
+    def clean_attributes(self):
+        for att in self.attributes:
+            if att == 'is_busy':
+                self.attributes[att] = False
+            else:
+                self.attributes[att] = 0
 
     def run(self) -> None:
         """
@@ -58,7 +62,7 @@ class SimpleQueue(Entity):
         while True:
             
             #server takes the head task from the queue
-            task = (yield self.store.get())
+            task = (yield self._store.get())
             self.attributes['queue_length'] -= 1
 
             # EVENT service_start
@@ -66,25 +70,39 @@ class SimpleQueue(Entity):
 
             # get a service duration 
             self.attributes['is_busy'] = True
-            new_service_duration = self.service_dist()
+            new_service_duration = self.service_rp.sample()
             self.attributes['last_service_duration'] = new_service_duration
-            self.attributes['last_service_time'] = self.env.now
+            self.attributes['last_service_time'] = self._env.now
 
             # wait until the task is served
-            yield self.env.timeout(new_service_duration)
+            yield self._env.timeout(new_service_duration)
             self.attributes['is_busy'] = False
 
             # EVENT service_end
             task = self.add_records(task=task, event_name='service_end')
             self.attributes['tasks_completed'] += 1
 
-            if self.debug:
+            if self._debug:
                 print(task)
 
             # put it on the output
             if self.out is not None:
-                self.out.put(task)
+                self._out.put(task)
             
+    def prepare_for_run(self, model: Model, env: simpy.Environment, debug: bool):
+        self._model = model
+        self._env = env
+        self._debug = debug
+
+        if self.out is not None:
+            self._out = model.entities[self.out]
+        if self.drop is not None:
+            self._drop = model.entities[self.drop]
+
+        self.service_rp.prepare_for_run()
+        self._store = simpy.Store(env)
+        self._action = model._env.process(self.run())  # starts the run() method as a SimPy process
+        
 
     def put(self, 
             task: Task
@@ -109,11 +127,11 @@ class SimpleQueue(Entity):
             # drop the task
             self.attributes['tasks_dropped'] += 1
             if self.drop is not None:
-                self.drop.put(task)
+                self._drop.put(task)
         else:
             # store the task in the queue
             self.attributes['queue_length'] += 1
-            self.store.put(task)
+            self._store.put(task)
 
         
 
