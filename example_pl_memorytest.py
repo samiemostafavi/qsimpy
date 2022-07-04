@@ -7,6 +7,7 @@ import time
 import psutil as ps
 import polars as pl
 import os
+from dill.source import getsource, importable
 
 from qsimpy.random import Deterministic, Gamma
 
@@ -85,15 +86,16 @@ if __name__ == "__main__":
     )
     model.add_entity(queue)
 
-
+    
     # a sink: to capture both finished tasks and dropped tasks (compare PolarSink vs Sink)
     sink = qsimpy.PolarSink(
         name='sink',
         debug=False,
         batch_size = 10000,
     )
-    # define postprocess function
-    def process_time_in_service(df):
+
+    # define postprocess function: the name must be 'user_fn'
+    def user_fn(df):
  
         df['end2end_delay'] = df['end_time']-df['start_time']
         df['service_delay'] = df['end_time']-df['service_time']
@@ -108,7 +110,10 @@ if __name__ == "__main__":
 
         return df
 
-    sink.set_post_process_fn(fn=process_time_in_service)
+    # convert it to string and pass it to the sink function
+    user_fn_str = importable(user_fn, source=True)
+    sink.set_post_process_fn(fn_str=user_fn_str)
+
     model.add_entity(sink)
 
     # Wire start-node, queue, end-node, and sink together
@@ -140,6 +145,22 @@ if __name__ == "__main__":
             },
         },
     })
+
+
+    mstr = model.json()
+    print(mstr)
+
+    del model
+    del source
+    del queue
+    del sink
+
+    model = qsimpy.Model.parse_raw(mstr)
+    print(f"The loaded model: {model.json()}")
+    source = model.entities['start-node']
+    queue = model.entities['queue']
+    sink = model.entities['sink']
+
 
     # prepare for run
     model.prepare_for_run(debug=False)

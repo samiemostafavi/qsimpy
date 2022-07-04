@@ -410,6 +410,7 @@ class PolarSink(Entity):
         'tasks_received':0,
     }
     batch_size : int = 10000,
+    post_process_fn_str : str = None
 
     _pl_received_tasks : pl.DataFrame = PrivateAttr()
     _received_tasks : List[Task] = PrivateAttr()
@@ -434,10 +435,15 @@ class PolarSink(Entity):
         self._received_tasks = []
         self._pl_received_tasks = None
 
+        # post process function
+        if self.post_process_fn_str is not None:
+            exec(self.post_process_fn_str, None, globals() )
+            self._post_process_fn = user_fn
+
         self._action = model._env.process(self.run())  # starts the run() method as a SimPy process
 
-    def set_post_process_fn(self, fn : Callable):
-        self._post_process_fn = fn
+    def set_post_process_fn(self, fn_str : str):
+        self.post_process_fn_str = fn_str
 
     def run(self):
         while True:
