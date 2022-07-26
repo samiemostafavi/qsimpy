@@ -247,6 +247,30 @@ class Source(Entity):
                 self._out.put(new_task)
 
 
+class TimedSource(Source):
+    type : str = 'timedsource'
+    delay_bound : float
+
+    def generate_task(self):
+        new_task = Task(
+            id=self.attributes['tasks_generated'], 
+            task_type=self.task_type,
+        )
+
+        # create a GeneratedTask dataclass with the fields that come from the timestamps and attributes
+        # form the fields for make_dataclass
+        if self._model.task_records:
+            fields = [ (name, float, field(default=-1)) for name in get_all_values(self._model.task_records) ]
+            fields.append(
+                ('delay_bound', float, field(default=self.delay_bound))
+            )
+            # call make_dataclass
+            new_task.__class__ = make_dataclass('GeneratedTimedTask', fields=fields, bases=(Task,))
+            return new_task
+        else:
+            return new_task
+
+
 class Sink(Entity):
     """ The sink that receives all tasks: dropped or finished
         Parameters
