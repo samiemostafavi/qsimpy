@@ -154,6 +154,8 @@ if __name__ == "__main__":
 
     print(df)
 
+    exit(0)
+
     df.to_parquet('dataset_onehop.parquet')
 
     # plot end-to-end delay profile
