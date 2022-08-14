@@ -1,16 +1,16 @@
-protobuf==3.20.1
 simpy
 pyparsing
 numpy
 pandas
 dataclasses
-seaborn==0.11.2
+seaborn
 pyarrow
+loguru
+pydantic
+polars
 protobuf==3.20.1
 tensorflow==2.8.0
 tensorflow-probability==0.16.0
-polars==0.13.51
-pydantic==1.9.1
 
 pre-commit
 black
