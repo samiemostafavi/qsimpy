@@ -114,12 +114,13 @@ class PolarSink(Entity):
     @property
     def received_tasks(self):
         pddf = pd.DataFrame(self._received_tasks)
-        if self._pl_received_tasks is None:
-            self._pl_received_tasks = pandas_to_polars(pddf, self._post_process_fn)
-        else:
-            self._pl_received_tasks = self._pl_received_tasks.vstack(
-                pandas_to_polars(pddf, self._post_process_fn)
-            )
+        if pddf.size != 0:  # fixed a bug
+            if self._pl_received_tasks is None:
+                self._pl_received_tasks = pandas_to_polars(pddf, self._post_process_fn)
+            else:
+                self._pl_received_tasks = self._pl_received_tasks.vstack(
+                    pandas_to_polars(pddf, self._post_process_fn)
+                )
         del pddf
         self._received_tasks = []
         return self._pl_received_tasks

@@ -179,14 +179,14 @@ if __name__ == "__main__":
     project_path = str(p) + "/results/gym_example/"
 
     # simulation parameters
-    bench_params = {str(n): n for n in range(10)}
+    bench_params = {str(n): n for n in range(18)}
 
     sequential_runs = 1  # 5
-    parallel_runs = 10  # 18
+    parallel_runs = 18  # 18
     for j in range(sequential_runs):
 
         processes = []
-        for i in range(parallel_runs):
+        for i in [17]:  # range(parallel_runs):
 
             # parameter figure out
             keys = list(bench_params.keys())
