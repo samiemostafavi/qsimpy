@@ -1,14 +1,11 @@
-import pandas as pd
-import qsimpy
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-import time
-import psutil as ps
-import polars as pl
 import os
-from dill.source import getsource, importable
+import time
 
+import polars as pl
+import psutil as ps
+from dill.source import importable
+
+import qsimpy
 from qsimpy.random import Deterministic, Gamma
 
 # https://stackoverflow.com/questions/41240470/python-simpy-memory-usage-with-large-numbers-of-objects-processes
@@ -29,20 +26,31 @@ class MemoryUse(object):
     def before(self):
 
         yield self.env.timeout(0)
-        print(f"full object list and memory events at time: {self.env.now}, {ps.Process(os.getpid()).memory_info().rss / 1024 ** 2} MB")
+        print(
+            f"full object list and memory events at time: {self.env.now}, \
+            {ps.Process(os.getpid()).memory_info().rss / 1024 ** 2} MB"
+        )
 
     def during_1(self):
         yield self.env.timeout(300000)
-        print(f"full object list and memory events at time: {self.env.now}, {ps.Process(os.getpid()).memory_info().rss / 1024 ** 2} MB")
+        print(
+            f"full object list and memory events at time: {self.env.now}, \
+            {ps.Process(os.getpid()).memory_info().rss / 1024 ** 2} MB"
+        )
 
     def during_2(self):
         yield self.env.timeout(600000)
-        print(f"full object list and memory events at time: {self.env.now}, {ps.Process(os.getpid()).memory_info().rss / 1024 ** 2} MB")
+        print(
+            f"full object list and memory events at time: {self.env.now}, \
+            {ps.Process(os.getpid()).memory_info().rss / 1024 ** 2} MB"
+        )
 
     def during_3(self):
         yield self.env.timeout(990000)
-        print(f"full object list and memory events at time: {self.env.now}, {ps.Process(os.getpid()).memory_info().rss / 1024 ** 2} MB")
-
+        print(
+            f"full object list and memory events at time: {self.env.now}, \
+            {ps.Process(os.getpid()).memory_info().rss / 1024 ** 2} MB"
+        )
 
 
 if __name__ == "__main__":
@@ -50,63 +58,62 @@ if __name__ == "__main__":
     # memory usage before we do anything
     print("before all: ", ps.virtual_memory())
 
-# Create the QSimPy environment
+    # Create the QSimPy environment
     # a class for keeping all of the entities and accessing their attributes
-    model = qsimpy.Model(name='test model')
+    model = qsimpy.Model(name="test model")
 
     # arrival process uniform
     arrival = Deterministic(
-        rate = 0.095,
-        seed = 100234,
-        dtype = 'float64',
+        rate=0.095,
+        seed=100234,
+        dtype="float64",
     )
 
     # Create a source
     source = qsimpy.Source(
-        name='start-node',
+        name="start-node",
         arrival_rp=arrival,
-        task_type='0',
+        task_type="0",
     )
     model.add_entity(source)
 
     # service process a Gamma distribution
     avg_service_rate = 0.10
     service = Gamma(
-        shape = 1.00/avg_service_rate, 
-        scale = 1.00,
-        seed  = 120034,
-        dtype = 'float64'
+        shape=1.00 / avg_service_rate, scale=1.00, seed=120034, dtype="float64"
     )
 
     # a queue
     queue = qsimpy.SimpleQueue(
-        name='queue',
-        service_rp= service,
+        name="queue",
+        service_rp=service,
         queue_limit=None,
     )
     model.add_entity(queue)
 
-    
-    # a sink: to capture both finished tasks and dropped tasks (compare PolarSink vs Sink)
+    # a sink: to capture both finished tasks and dropped tasks
+    # (compare PolarSink vs Sink)
     sink = qsimpy.PolarSink(
-        name='sink',
+        name="sink",
         debug=False,
-        batch_size = 10000,
+        batch_size=10000,
     )
 
     # define postprocess function: the name must be 'user_fn'
     def user_fn(df):
- 
-        df['end2end_delay'] = df['end_time']-df['start_time']
-        df['service_delay'] = df['end_time']-df['service_time']
-        df['queue_delay'] = df['service_time']-df['queue_time']
 
-        df['time_in_service'] = df.apply(
-                                lambda row: (row.start_time-row.last_service_time) if row.queue_is_busy else None,
-                                axis=1,
-                            ).astype('float64')
+        df["end2end_delay"] = df["end_time"] - df["start_time"]
+        df["service_delay"] = df["end_time"] - df["service_time"]
+        df["queue_delay"] = df["service_time"] - df["queue_time"]
 
-        del df['last_service_duration'], df['last_service_time'], df['queue_is_busy']
+        df["time_in_service"] = df.apply(
+            lambda row: (row.start_time - row.last_service_time)
+            if row.queue_is_busy
+            else None,
+            axis=1,
+        ).astype("float64")
+
+        del df["last_service_duration"], df["last_service_time"], df["queue_is_busy"]
 
         return df
 
@@ -121,31 +128,32 @@ if __name__ == "__main__":
     queue.out = sink.name
     queue.drop = sink.name
 
-    model.set_task_records({
-        'timestamps' : {
-            source.name : {
-                'task_generation':'start_time',
+    model.set_task_records(
+        {
+            "timestamps": {
+                source.name: {
+                    "task_generation": "start_time",
+                },
+                queue.name: {
+                    "task_reception": "queue_time",
+                    "service_start": "service_time",
+                    "service_end": "end_time",
+                },
             },
-            queue.name : {
-                'task_reception':'queue_time',
-                'service_start':'service_time',
-                'service_end':'end_time',
-            },
-        },
-        'attributes' : {
-            source.name : {
-                'task_generation' : {
-                    queue.name : {
-                        'queue_length':'queue_length',
-                        'last_service_duration':'last_service_duration',
-                        'last_service_time':'last_service_time',
-                        'is_busy':'queue_is_busy',
+            "attributes": {
+                source.name: {
+                    "task_generation": {
+                        queue.name: {
+                            "queue_length": "queue_length",
+                            "last_service_duration": "last_service_duration",
+                            "last_service_time": "last_service_time",
+                            "is_busy": "queue_is_busy",
+                        },
                     },
                 },
             },
-        },
-    })
-
+        }
+    )
 
     mstr = model.json()
     print(mstr)
@@ -157,10 +165,9 @@ if __name__ == "__main__":
 
     model = qsimpy.Model.parse_raw(mstr)
     print(f"The loaded model: {model.json()}")
-    source = model.entities['start-node']
-    queue = model.entities['queue']
-    sink = model.entities['sink']
-
+    source = model.entities["start-node"]
+    queue = model.entities["queue"]
+    sink = model.entities["sink"]
 
     # prepare for run
     model.prepare_for_run(debug=False)
@@ -177,23 +184,22 @@ if __name__ == "__main__":
     end = time.time()
     print("Run finished in {0} seconds".format(end - start))
 
-    print("Source generated {0} tasks".format(source.get_attribute('tasks_generated')))
-    print("Queue completed {0}, dropped {1}".format(
-            queue.get_attribute('tasks_completed'),
-            queue.get_attribute('tasks_dropped'),
+    print("Source generated {0} tasks".format(source.get_attribute("tasks_generated")))
+    print(
+        "Queue completed {0}, dropped {1}".format(
+            queue.get_attribute("tasks_completed"),
+            queue.get_attribute("tasks_dropped"),
         )
     )
-    print("Sink received {0} tasks".format(sink.get_attribute('tasks_received')))
+    print("Sink received {0} tasks".format(sink.get_attribute("tasks_received")))
 
     # Process the collected data
     df = sink.received_tasks
     print(df)
-    df_dropped = df.filter(pl.col('end_time') == -1)
+    df_dropped = df.filter(pl.col("end_time") == -1)
     print(df_dropped.shape)
-    df_finished = df.filter(pl.col('end_time') >= 0)
+    df_finished = df.filter(pl.col("end_time") >= 0)
     print(df_finished.shape)
     df = df_finished
 
-    df.write_parquet('memorytest_onehop.parquet')
-
-
+    df.write_parquet("memorytest_onehop.parquet")

@@ -1,13 +1,15 @@
-from pydantic import BaseModel, PrivateAttr
 from typing import Tuple
+
 import numpy as np
+from pydantic import BaseModel, PrivateAttr
+
 
 class RandomProcess(BaseModel):
-    dtype : str
+    dtype: str
     type: str
     seed: int
 
-    _rng : np.random.Generator = PrivateAttr()
+    _rng: np.random.Generator = PrivateAttr()
     _subtypes_ = dict()
 
     def __init_subclass__(cls, type=None):
@@ -27,7 +29,7 @@ class RandomProcess(BaseModel):
         sub = cls._subtypes_.get(data_type)
 
         if sub is None:
-            raise TypeError(f"Unsupport sub-type: {data_type}")
+            raise TypeError(f"Unsupported sub-type: {data_type}")
 
         return sub(**data)
 
@@ -41,50 +43,56 @@ class RandomProcess(BaseModel):
     @classmethod
     def parse_obj(cls, obj):
         return cls._convert_to_real_type_(obj)
-    
+
     def sample(self):
         pass
 
-    def sample_n(self,
-        n : int,
+    def sample_n(
+        self,
+        n: int,
     ):
         pass
 
-    def prob(self,
+    def prob(
+        self,
         y,
     ):
         pass
-    
-    def cdf(self,
+
+    def cdf(
+        self,
         y,
     ):
         pass
+
 
 class Deterministic(RandomProcess):
-    type: str = 'deterministic'
-    rate : np.float64
+    type: str = "deterministic"
+    rate: np.float64
 
-    def sample_n(self,
-        n : int,
+    def sample_n(
+        self,
+        n: int,
     ):
-        return self._rng.uniform(1.00/self.rate, 1.00/self.rate, size=n)
+        return self._rng.uniform(1.00 / self.rate, 1.00 / self.rate, size=n)
 
     def sample(self):
-        return self._rng.uniform(1.00/self.rate, 1.00/self.rate, size=1)[0]
+        return self._rng.uniform(1.00 / self.rate, 1.00 / self.rate, size=1)[0]
 
     def prepare_for_run(self):
         self._rng = np.random.default_rng(self.seed)
 
 
 class Gamma(RandomProcess):
-    type: str = 'gamma'
-    shape : np.float64
-    scale : np.float64
+    type: str = "gamma"
+    shape: np.float64
+    scale: np.float64
 
-    _rng_state : Tuple
+    _rng_state: Tuple
 
-    def sample_n(self,
-        n : int,
+    def sample_n(
+        self,
+        n: int,
     ):
         return self._rng.gamma(self.shape, self.scale, size=n)
 
