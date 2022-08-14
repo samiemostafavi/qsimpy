@@ -114,9 +114,9 @@ def create_run_graph(params):
     def report_state(time_step):
         yield model.env.timeout(time_step)
         logger.info(
-            f"{params['run_number']}: \
-            Simulation progress \
-            {100.0*float(model.env.now)/float(params['until'])}% done"
+            f"{params['run_number']}:"
+            + " Simulation progress"
+            + f" {100.0*float(model.env.now)/float(params['until'])}% done"
         )
 
     for step in np.arange(
@@ -131,8 +131,8 @@ def create_run_graph(params):
     logger.info(f"{params['run_number']}: Run finished in {end - start} seconds")
 
     logger.info(
-        "{0}: Source generated {1} tasks".format(
-            params["run_number"], source.get_attribute("tasks_generated")
+        "{0}: Source generated {1} main tasks".format(
+            params["run_number"], source.get_attribute("main_tasks_generated")
         )
     )
     logger.info(
@@ -143,7 +143,7 @@ def create_run_graph(params):
         )
     )
     logger.info(
-        "{0}: Sink received {1} tasks".format(
+        "{0}: Sink received {1} main tasks".format(
             params["run_number"], sink.get_attribute("tasks_received")
         )
     )
@@ -160,7 +160,10 @@ def create_run_graph(params):
 
     end = time.time()
 
-    df.to_parquet(params["records_path"] + f"{params['run_number']}_records.parquet")
+    df.write_parquet(
+        file=params["records_path"] + f"{params['run_number']}_records.parquet",
+        compression="snappy",
+    )
 
     logger.info(
         "{0}: Data processing finished in {1} seconds".format(
@@ -176,10 +179,10 @@ if __name__ == "__main__":
     project_path = str(p) + "/results/gym_example/"
 
     # simulation parameters
-    bench_params = {str(n): n for n in range(18)}
+    bench_params = {str(n): n for n in range(10)}
 
     sequential_runs = 1  # 5
-    parallel_runs = 18  # 18
+    parallel_runs = 10  # 18
     for j in range(sequential_runs):
 
         processes = []
@@ -201,7 +204,7 @@ if __name__ == "__main__":
                 "service_seed": 120034 + i * 200202 + j * 20111,
                 "traffic_tasks": bench_params[key_this_run],  # number of traffic tasks
                 "until": int(
-                    1000000 * (bench_params[key_this_run] + 1)
+                    100000 * (bench_params[key_this_run] + 1)
                 ),  # 10M timesteps takes 1000 seconds, generates 900k samples
                 "report_state": 0.05,  # report when 10%, 20%, etc progress reaches
             }
