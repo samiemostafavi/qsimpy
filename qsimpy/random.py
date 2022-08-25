@@ -83,6 +83,23 @@ class Deterministic(RandomProcess):
         self._rng = np.random.default_rng(self.seed)
 
 
+class Exponential(RandomProcess):
+    type: str = "exponential"
+    rate: np.float64
+
+    def sample_n(
+        self,
+        n: int,
+    ):
+        return self._rng.exponential(scale=1.0 / self.rate, size=n)
+
+    def sample(self):
+        return self._rng.exponential(scale=1.0 / self.rate, size=1)[0]
+
+    def prepare_for_run(self):
+        self._rng = np.random.default_rng(self.seed)
+
+
 class Gamma(RandomProcess):
     type: str = "gamma"
     shape: np.float64

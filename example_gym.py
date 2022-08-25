@@ -186,7 +186,7 @@ if __name__ == "__main__":
     for j in range(sequential_runs):
 
         processes = []
-        for i in [17]:  # range(parallel_runs):
+        for i in range(parallel_runs):  # range(parallel_runs):
 
             # parameter figure out
             keys = list(bench_params.keys())
