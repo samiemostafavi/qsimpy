@@ -149,6 +149,7 @@ class GymSink(PolarSink):
     def run(self):
         while True:
             task = yield self._store.get()
+            is_last_main = task.is_last_main
 
             # EVENT task_reception
             task = self.add_records(task=task, event_name="task_reception")
@@ -173,6 +174,6 @@ class GymSink(PolarSink):
                 del task, pddf
                 self._received_tasks = []
 
-            if (self.out is not None) and (task.is_last_main):
+            if (self.out is not None) and (is_last_main):
                 # send the start message to the source
                 self._out.put(Task(id=0, task_type="start_msg"))
