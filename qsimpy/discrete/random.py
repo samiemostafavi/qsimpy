@@ -11,6 +11,9 @@ class Deterministic(RandomProcess):
     duration: int  # T
     _count: int = PrivateAttr(default=0)
 
+    def prepare_for_run(self):
+        self._count = 0
+
     def sample(self):
         if self._count == 0:
             result = self.initial_load
