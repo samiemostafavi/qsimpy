@@ -8,13 +8,17 @@ class Deterministic(RandomProcess):
     type: str = "deterministic"
     rate: int  # rho
     initial_load: int  # sigma
+    duration: int  # T
     _count: int = PrivateAttr(default=0)
 
     def sample(self):
         if self._count == 0:
             result = self.initial_load
         else:
-            result = self.rate
+            if self._count <= self.duration:
+                result = self.rate
+            else:
+                result = 0
         self._count += 1
         return result
 
