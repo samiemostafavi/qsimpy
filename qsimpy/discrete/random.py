@@ -1,14 +1,22 @@
 import numpy as np
+from pydantic import PrivateAttr
 
 from qsimpy.random import RandomProcess
 
 
 class Deterministic(RandomProcess):
     type: str = "deterministic"
-    rate: int
+    rate: int  # rho
+    initial_load: int  # sigma
+    _count: int = PrivateAttr(default=0)
 
     def sample(self):
-        return self.rate
+        if self._count == 0:
+            result = self.initial_load
+        else:
+            result = self.rate
+        self._count += 1
+        return result
 
 
 class Rayleigh(RandomProcess):
