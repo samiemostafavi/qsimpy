@@ -38,6 +38,7 @@ class GymSource(Entity):
         "main_tasks_generated": 0,
         "traffic_tasks_generated": 0,
     }
+    main_task_num: int = 1
     main_task_type: str
     traffic_task_type: str
     traffic_task_num: int
@@ -64,28 +65,34 @@ class GymSource(Entity):
         for att in self.attributes:
             self.attributes[att] = 0
 
-    def generate_main_task(self):
-
-        new_task = Task(
-            id=self.attributes["main_tasks_generated"],
-            task_type=self.main_task_type,
-        )
-
-        # create a GeneratedTask dataclass with the fields that come from the
-        # timestamps and attributes form the fields for make_dataclass
-        if self._model.task_records:
-            fields = [
-                (name, float, field(default=-1))
-                for name in get_all_values(self._model.task_records)
-            ]
-            # call make_dataclass
-            new_task.__class__ = make_dataclass(
-                "GeneratedTask", fields=fields, bases=(Task,)
+    def generate_main_tasks(self, n: int):
+        new_tasks = []
+        for i in range(n):
+            new_task = Task(
+                id=self.attributes["main_tasks_generated"],
+                task_type=self.main_task_type,
             )
+            # create a GeneratedTask dataclass with the fields that come from the
+            # timestamps and attributes form the fields for make_dataclass
+            if self._model.task_records:
+                fields = [
+                    (name, float, field(default=-1))
+                    for name in get_all_values(self._model.task_records)
+                ]
+                fields.append(("is_last_main", bool, field(default=False)))
+                # call make_dataclass
+                new_task.__class__ = make_dataclass(
+                    "GeneratedTask", fields=fields, bases=(Task,)
+                )
+            # if it is the last main task
+            if i == n - 1:
+                new_task.is_last_main = True
+            self.attributes["main_tasks_generated"] += 1
+            # EVENT task_generation
+            new_task = self.add_records(task=new_task, event_name="task_generation")
+            new_tasks.append(new_task)
 
-        self.attributes["main_tasks_generated"] += 1
-
-        return new_task
+        return new_tasks
 
     def generate_traffic_tasks(self, n: int):
 
@@ -114,15 +121,10 @@ class GymSource(Entity):
                     self._out.put(traffic_task)
 
             # generate and send the main task
-            main_task = self.generate_main_task()
-            # EVENT task_generation
-            main_task = self.add_records(task=main_task, event_name="task_generation")
-
-            if self._debug:
-                print(main_task)
-
+            main_tasks = self.generate_main_tasks(self.main_task_num)
             if self.out is not None:
-                self._out.put(main_task)
+                for main_task in main_tasks:
+                    self._out.put(main_task)
 
             # wait for the next transmission
             yield self._store.get()
@@ -171,6 +173,6 @@ class GymSink(PolarSink):
                 del task, pddf
                 self._received_tasks = []
 
-            if self.out is not None:
+            if (self.out is not None) and (task.is_last_main):
                 # send the start message to the source
                 self._out.put(Task(id=0, task_type="start_msg"))

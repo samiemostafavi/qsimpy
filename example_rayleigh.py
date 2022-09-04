@@ -1,8 +1,8 @@
 import time
 
 import matplotlib.pyplot as plt
-import pandas as pd
 import seaborn as sns
+from loguru import logger
 
 from qsimpy.core import Model
 from qsimpy.discrete import CapacityQueue, CapacitySource, Deterministic, Rayleigh
@@ -15,7 +15,7 @@ model = Model(name="test Rayleigh model")
 # arrival process uniform
 arrival = Deterministic(
     seed=0,
-    rate=25,
+    rate=20,
     initial_load=0,
     duration=None,
     dtype="float64",
@@ -49,6 +49,15 @@ sink = PolarSink(
     name="sink",
     batch_size=10000,
 )
+
+
+def user_fn(df):
+    # df is pandas dataframe in batch_size
+    df["end2end_delay"] = df["end_time"] - df["start_time"]
+    return df
+
+
+sink._post_process_fn = user_fn
 model.add_entity(sink)
 
 # add task records
@@ -83,11 +92,10 @@ queue.drop = sink.name
 model.prepare_for_run(debug=False)
 
 # Run it
-print("Run the model:")
 start = time.time()
 model.env.run(until=10000)
 end = time.time()
-print("Run finished in {0} seconds".format(end - start))
+logger.info(f"Run finished in {end - start} seconds")
 
 print("Source generated {0} tasks".format(source.get_attribute("tasks_generated")))
 print(
@@ -99,27 +107,32 @@ print(
 print("Sink received {0} tasks".format(sink.get_attribute("tasks_received")))
 
 # Process the collected data
-df = pd.DataFrame(sink.received_tasks)
+df = sink.received_tasks
+logger.info(
+    "Source generated {0} tasks".format(source.get_attribute("tasks_generated"))
+)
+logger.info(
+    "Queue completed {0}, dropped {1}".format(
+        queue.get_attribute("tasks_completed"),
+        queue.get_attribute("tasks_dropped"),
+    )
+)
+logger.info("Sink received {0} main tasks".format(sink.get_attribute("tasks_received")))
 
-df_dropped = df[df.end_time == -1]
-df_finished = df[df.end_time >= 0]
-df = df_finished
+start = time.time()
 
-df["end2end_delay"] = df["end_time"] - df["start_time"]
-df["queue_delay"] = df["end_time"] - df["queue_time"]
+# Process the collected data
+df = sink.received_tasks
+# print(df)
 
-del df["end_time"]
-del df["start_time"]
-del df["queue_time"]
+end = time.time()
 
+df.write_parquet(
+    file="records.parquet",
+    compression="snappy",
+)
 
 # plot end-to-end delay profile
 sns.set_style("darkgrid")
 sns.displot(df["end2end_delay"], kde=True)
 plt.savefig("end2end.png")
-
-sns.displot(df["queue_delay"], kde=True)
-plt.savefig("queue_delay.png")
-
-print(df["end2end_delay"].describe(percentiles=[0.9, 0.99, 0.999, 0.9999, 0.99999]))
-print(df["queue_delay"].describe(percentiles=[0.9, 0.99, 0.999, 0.9999, 0.99999]))
