@@ -16,6 +16,8 @@ model = Model(name="test Rayleigh model")
 arrival = Deterministic(
     seed=0,
     rate=25,
+    initial_load=0,
+    duration=None,
     dtype="float64",
 )
 # Create a source

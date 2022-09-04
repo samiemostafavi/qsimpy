@@ -8,7 +8,7 @@ class Deterministic(RandomProcess):
     type: str = "deterministic"
     rate: int  # rho
     initial_load: int  # sigma
-    duration: int  # T
+    duration: int = None  # T
     _count: int = PrivateAttr(default=0)
 
     def prepare_for_run(self):
@@ -18,10 +18,13 @@ class Deterministic(RandomProcess):
         if self._count == 0:
             result = self.initial_load
         else:
-            if self._count <= self.duration:
-                result = self.rate
+            if self.duration is not None:
+                if self._count <= self.duration:
+                    result = self.rate
+                else:
+                    result = 0
             else:
-                result = 0
+                result = self.rate
         self._count += 1
         return result
 
