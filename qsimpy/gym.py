@@ -42,7 +42,6 @@ class GymSource(Entity):
     main_task_type: str
     traffic_task_type: str
     traffic_task_num: int
-    initial_delay: float = 0
     finish_time: float = None
 
     _store: simpy.Store = PrivateAttr()
@@ -110,7 +109,6 @@ class GymSource(Entity):
 
     def run(self):
         """The generator function used in simulations."""
-        yield self._env.timeout(self.initial_delay)
         if self.finish_time is None:
             _finish_time = float("inf")
         while self._env.now < _finish_time:

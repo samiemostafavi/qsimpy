@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field, make_dataclass
 from typing import Any, Dict, FrozenSet, List
 
@@ -35,7 +36,8 @@ class Model(BaseModel):
 
     name: str
     task_records: Dict = {}
-    entities: Dict[str, Entity] = {}
+    # IMPORTANT OrderedDict, otherwise prepare_for_run won't be in order
+    entities: OrderedDict = OrderedDict()
 
     # Pydantic will exclude the class variables which begin with an underscore
     _env: simpy.Environment = PrivateAttr()
@@ -186,8 +188,6 @@ class Source(Entity):
     arrival_rp : RandomProcess
         A RandomProcess object that its sample_n fn returns
         the successive inter-arrival times of the tasks
-    initial_delay : number
-        Starts task generation after an initial delay. Default = 0
     finish_time : number
         Stops generation at the finish time. Default is infinite
     """
@@ -198,7 +198,6 @@ class Source(Entity):
         "tasks_generated": 0,
     }
     task_type: str
-    initial_delay: float = 0
     finish_time: float = None
 
     # Arrival random process
@@ -251,7 +250,6 @@ class Source(Entity):
 
     def run(self):
         """The generator function used in simulations."""
-        yield self._env.timeout(self.initial_delay)
         if self.finish_time is None:
             _finish_time = float("inf")
         while self._env.now < _finish_time:
