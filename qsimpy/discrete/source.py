@@ -7,8 +7,6 @@ class CapacitySource(Source):
     def run(self):
 
         """The generator function used in simulations."""
-        yield self._env.timeout(self.initial_delay)
-
         if self.finish_time is None:
             _finish_time = float("inf")
 
