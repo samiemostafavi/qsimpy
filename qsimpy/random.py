@@ -2,6 +2,7 @@ from typing import Tuple
 
 import numpy as np
 from pydantic import BaseModel, PrivateAttr
+from scipy.stats import gamma
 
 
 class RandomProcess(BaseModel):
@@ -118,3 +119,6 @@ class Gamma(RandomProcess):
 
     def prepare_for_run(self):
         self._rng = np.random.default_rng(self.seed)
+
+    def cdf(self, y):
+        return gamma.cdf(y, self.shape, loc=0, scale=1.00 / self.scale)
