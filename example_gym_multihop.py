@@ -26,7 +26,7 @@ source = MultihopGymSource(
     main_task_num=[1, 0, 0, 0],
     traffic_task_type="traffic",
     traffic_task_num=[5, 5, 5, 5],
-    traffic_task_ldp=[1.0, 1.0, 1.0, 1.0],
+    traffic_task_ldp=[0.1, 1.0, 0.3, 0.2],
 )
 model.add_entity(source)
 
