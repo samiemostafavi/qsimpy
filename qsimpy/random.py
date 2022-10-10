@@ -103,8 +103,8 @@ class Exponential(RandomProcess):
 
 class Gamma(RandomProcess):
     type: str = "gamma"
-    shape: np.float64
-    scale: np.float64
+    shape: np.float64  # k or shape in numpy, a or shape in scipy
+    scale: np.float64  # theta or scale in numpy, beta or 1/scale in scipy
 
     _rng_state: Tuple
 
@@ -112,13 +112,35 @@ class Gamma(RandomProcess):
         self,
         n: int,
     ):
-        return self._rng.gamma(self.shape, self.scale, size=n)
+        return self._rng.gamma(shape=self.shape, scale=self.scale, size=n)
 
     def sample(self):
-        return self._rng.gamma(self.shape, self.scale, size=1)[0]
+        return self._rng.gamma(shape=self.shape, scale=self.scale, size=1)[0]
+
+    def sample_ldp(self, ldp: float):
+        # sample conditioned on a longer_delay_prob
+        # NOTE: tests show scale=self.scale is correct
+        # but the document says 1.00 / self.scale
+        time_in_service = gamma.ppf(
+            q=1.00 - ldp,
+            a=self.shape,
+            loc=0,
+            scale=self.scale,
+        )
+        # if ldp==1.00
+        if time_in_service == 0:
+            return self.sample()
+
+        sample = 0
+        while sample < time_in_service:
+            sample = self.sample()
+
+        return sample - time_in_service
 
     def prepare_for_run(self):
         self._rng = np.random.default_rng(self.seed)
 
     def cdf(self, y):
-        return gamma.cdf(y, self.shape, loc=0, scale=1.00 / self.scale)
+        # NOTE: tests show scale=self.scale is correct
+        # but the document says 1.00 / self.scale
+        return gamma.cdf(y, self.shape, loc=0, scale=self.scale)

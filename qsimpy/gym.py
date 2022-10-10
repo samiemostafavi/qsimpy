@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import field, make_dataclass
-from typing import Any, Dict, FrozenSet
+from typing import Any, Dict, FrozenSet, List
 
 import pandas as pd
 import simpy
@@ -9,6 +9,7 @@ from pydantic import PrivateAttr
 
 from .core import Entity, Model, Task
 from .polar import PolarSink, pandas_to_polars
+from .simplemultihop import SimpleMultiHop
 from .utils import get_all_values
 
 
@@ -175,3 +176,140 @@ class GymSink(PolarSink):
             if (self.out is not None) and (is_last_main):
                 # send the start message to the source
                 self._out.put(Task(id=0, task_type="start_msg"))
+
+
+class MultihopGymSource(Entity):
+    """Generates gym tasks
+    Set the "out" member variable to the entity to receive the task.
+
+    Parameters
+    ----------
+    env : Environment
+        the QSimPy simulation environment
+    main_task_type : str
+        type of the tasks being generated
+    traffic_task_type : str
+        type of the tasks being generated
+    traffic_task_num : List[int]
+        the number of traffic tasks to go before the main task in each queue
+    traffic_task_ldp: List[float]
+        the longer delay probability of the task that is being served in each queue
+    initial_delay : number
+        Starts task generation after an initial delay. Default = 0
+    finish_time : number
+        Stops generation at the finish time. Default is infinite
+    """
+
+    type: str = "multihopgymsource"
+    events: FrozenSet[str] = {"task_generation"}
+    attributes: Dict[str, Any] = {
+        "main_tasks_generated": 0,
+        "traffic_tasks_generated": 0,
+    }
+    main_task_num: List[int]
+    main_task_type: str
+    n_hops: int
+    traffic_task_type: str
+    traffic_task_num: List[int]
+    traffic_task_ldp: List[float]
+    finish_time: float = None
+
+    _store: simpy.Store = PrivateAttr()
+
+    def prepare_for_run(self, model: Model, env: simpy.Environment, debug: bool):
+        self._model = model
+        self._env = env
+        self._debug = debug
+
+        if self.out is not None:
+            self._out: SimpleMultiHop = model.entities[self.out]
+        if self.drop is not None:
+            self._drop = model.entities[self.drop]
+
+        self._store = simpy.Store(env)
+        # starts the run() method as a SimPy process
+        self._action = model._env.process(self.run())
+
+    def clean_attributes(self):
+        for att in self.attributes:
+            self.attributes[att] = 0
+
+    def send_main_tasks(self):
+
+        # generate and send the mains
+        for hop in range(self.n_hops):
+            for i in range(self.main_task_num[hop]):
+                new_task = Task(
+                    id=self.attributes["main_tasks_generated"],
+                    task_type=self.main_task_type,
+                )
+                # create a GeneratedTask dataclass with the fields that come from the
+                # timestamps and attributes form the fields for make_dataclass
+                if self._model.task_records:
+                    fields = [
+                        (name, float, field(default=-1))
+                        for name in get_all_values(self._model.task_records)
+                    ]
+                    fields.append(("is_last_main", bool, field(default=False)))
+                    # call make_dataclass
+                    new_task.__class__ = make_dataclass(
+                        "GeneratedTask", fields=fields, bases=(Task,)
+                    )
+                # if it is the last main task
+                if i == (self.main_task_num[hop] - 1) and hop == 0:
+                    new_task.is_last_main = True
+                self.attributes["main_tasks_generated"] += 1
+                # EVENT task_generation
+                new_task = self.add_records(task=new_task, event_name="task_generation")
+
+                # send the task
+                if self.out is not None:
+                    self._out.put_midhop(new_task, hop)
+
+    def send_traffic_tasks(self):
+
+        # generate and send the traffic
+        for hop in range(self.n_hops):
+            for i in range(self.traffic_task_num[hop]):
+                new_task = Task(
+                    id=self.attributes["traffic_tasks_generated"],
+                    task_type=self.traffic_task_type,
+                )
+                # create a GeneratedTask dataclass with the fields that come from the
+                # timestamps and attributes form the fields for make_dataclass
+                if self._model.task_records:
+                    fields = [
+                        (name, float, field(default=-1))
+                        for name in get_all_values(self._model.task_records)
+                    ]
+                    if i == 0:
+                        fields.append(
+                            ("longer_delay_prob", float, field(default=False))
+                        )
+                    # call make_dataclass
+                    new_task.__class__ = make_dataclass(
+                        "GeneratedTask", fields=fields, bases=(Task,)
+                    )
+                # if it is the first traffic task
+                if i == 0:
+                    new_task.longer_delay_prob = self.traffic_task_ldp[hop]
+
+                self.attributes["traffic_tasks_generated"] += 1
+
+                # send the task
+                if self.out is not None:
+                    self._out.put_midhop(new_task, hop)
+
+    def run(self):
+        """The generator function used in simulations."""
+        if self.finish_time is None:
+            _finish_time = float("inf")
+        while self._env.now < _finish_time:
+            self.send_traffic_tasks()
+            self.send_main_tasks()
+
+            # wait for the next transmission
+            yield self._store.get()
+
+    def put(self, start_msg):
+        self._store.put(start_msg)

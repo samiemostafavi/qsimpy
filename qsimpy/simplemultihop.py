@@ -68,7 +68,6 @@ class SimpleMultiHop(Entity):
 
         if "queue_limit" not in data.keys():
             data["queue_limit"] = [None] * data["n_hops"]
-            print(data["queue_limit"])
 
         super().__init__(**data)
 
@@ -113,7 +112,13 @@ class SimpleMultiHop(Entity):
 
             # get a service duration
             self.attributes[f"is_busy_h{hop}"] = True
-            new_service_duration = self.service_rp[hop].sample()
+            # conditional sampling for gym
+            if hasattr(task, "longer_delay_prob"):
+                new_service_duration = self.service_rp[hop].sample_ldp(
+                    task.longer_delay_prob,
+                )
+            else:
+                new_service_duration = self.service_rp[hop].sample()
             self.attributes[f"last_service_duration_h{hop}"] = new_service_duration
             self.attributes[f"last_service_time_h{hop}"] = self._env.now
 
