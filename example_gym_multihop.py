@@ -2,7 +2,6 @@ import time
 from typing import List
 
 import matplotlib.pyplot as plt
-import numpy as np
 import polars as pl
 import seaborn as sns
 
@@ -72,22 +71,10 @@ def user_fn(df):
     # process time-in-service
     # h is hop num
     for h in range(N_HOPS):
-        # process time in service
-        df[f"time_in_service_h{h}"] = df.apply(
-            lambda row: (row["queue_time"] - row[f"last_service_time_h{h}"])
-            if row[f"queue_is_busy_h{h}"]
-            else None,
-            axis=1,
-        ).astype("float64")
-
+        # reduce queue_length by 1
+        df[f"queue_length_h{h}"] = df[f"queue_length_h{h}"] - 1
         # process longer_delay_prob here for benchmark purposes
-        service = Gamma(**services[h])
-        df[f"longer_delay_prob_h{h}"] = np.float64(1.00) - service.cdf(
-            y=df[f"time_in_service_h{h}"].to_numpy(),
-        )
-        df[f"longer_delay_prob_h{h}"] = df[f"longer_delay_prob_h{h}"].fillna(
-            np.float64(0.00)
-        )
+        df[f"longer_delay_prob_h{h}"] = source.traffic_task_ldp[h]
         del df[f"last_service_time_h{h}"], df[f"queue_is_busy_h{h}"]
 
     # delete remaining items
@@ -212,7 +199,10 @@ df.write_parquet(
     file="records.parquet",
     compression="snappy",
 )
-
+df.write_csv(
+    "records.csv",
+    sep=",",
+)
 df_dropped = df.filter(pl.col("end_time") == -1)
 df_finished = df.filter(pl.col("end_time") >= 0)
 # df = df_finished
